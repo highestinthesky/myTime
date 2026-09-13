@@ -8,12 +8,12 @@ import MyTimeCore
     private(set) var uiNow = Date()
     @ObservationIgnored private let store: StateStore
     @ObservationIgnored private let probe = SystemProbe()
-    @ObservationIgnored private let monitor = AppMonitor()
+    @ObservationIgnored let monitor = AppMonitor()
     @ObservationIgnored private let scheduler = Scheduler()
     @ObservationIgnored private var events: SystemEvents?
     @ObservationIgnored private(set) var enforcer: Enforcer!
     @ObservationIgnored private(set) var overlays: OverlayController!
-    @ObservationIgnored private let labelTimer = RepeatingUITimer()
+    @ObservationIgnored private let countdownTimer = RepeatingUITimer()
     @ObservationIgnored private let panelTimer = RepeatingUITimer()
     @ObservationIgnored private var lastSaved: PersistedState?
     @ObservationIgnored private var activity: NSObjectProtocol?
@@ -98,10 +98,12 @@ import MyTimeCore
             ProcessInfo.processInfo.endActivity(activity)
             self.activity = nil
         }
+        // While a grant countdown is on screen, refresh the engine every second so the pill, the menu bar label,
+        // and `canExtend` (which reads `core.now`) stay current. Nothing ticks when no countdown is visible.
         if grantCountdown == nil {
-            labelTimer.stop()
+            countdownTimer.stop()
         } else {
-            labelTimer.start(interval: 1) { [weak self] in self?.uiNow = Date() }
+            countdownTimer.start(interval: 1) { [weak self] in self?.refresh(.uiTick) }
         }
     }
     var grantCountdown: GrantCountdown? {

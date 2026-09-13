@@ -14,6 +14,8 @@ final class OverlayPanel: NSPanel {
             contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
         isFloatingPanel = true
         becomesKeyOnlyIfNeeded = false
+        // Borderless windows have no title bar to drag; let the user drag anywhere that isn't a control.
+        isMovableByWindowBackground = true
         level = allowsKey ? .modalPanel : .floating
         isOpaque = false
         backgroundColor = .clear

@@ -47,3 +47,13 @@ Verified independently: `swift build`, `swift build -Xswiftc -DDEV_TIMESCALE`, `
 | 5 | Never mind (via 60 s timeout) | Pass — Discord quit at ~60 s; history shows one "Backed off from Discord" |
 | 6 | Quick look + pill + expiry | Pending — needs UI interaction |
 | 7 | Idle cost | Pass — 0.0% CPU over 60 s, 1 idle wake-up total, 16 MB memory footprint |
+
+### Follow-up fixes from user testing (Run 1)
+
+| Report | Root cause (evidence) | Fix |
+|---|---|---|
+| Black windows flash when Discord starts | Trace of NSWorkspace events + on-screen windows at 20 Hz: Discord un-hid itself 3× in ~1.5 s during launch (incl. a 294×294 splash window); each re-hide left a black frame visible for ~30 ms. | **Quit-first enforcement**: quit the app on its first launch/activate event and show the gate for the app; on purchase, relaunch it via `NSWorkspace.openApplication` with launch grace starting at the relaunch. Measured: 0 Discord windows in ~900 samples at 10 ms; reopening while the gate is up quits quietly with a single gate. `EnforcementAction` is now `allow / terminate / terminateAndShowGate / terminateAndShowFocusCard`; the 0.5 s re-hide timer is gone. |
+| "+30 s" option shows ~2 s before Discord closes | `PillView` called `core.canExtend`, which reads `core.now`; nothing refreshed the engine during a countdown (the label timer only bumped `uiNow`), so `now` stayed at purchase time until an unrelated event. | While a grant countdown is visible, one 1 s timer runs `refresh(.uiTick)`; pill and label timers merged into it. |
+| Overlay windows can't be moved | Borderless panels without `isMovableByWindowBackground` (verified `NSHostingView.mouseDownCanMoveWindow == true`, so enabling it is sufficient). | All overlays movable; the pill remembers its position (`mytime.pillOrigin`), the gate re-centers each time. |
+
+Note on the "gate closes by itself" hypothesis: instrumented logs showed every early close in testing was a real Esc key press or click while a test gate appeared on the user's screen; untouched gates always waited 60 s.

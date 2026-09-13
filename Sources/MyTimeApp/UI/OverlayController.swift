@@ -1,10 +1,12 @@
 import AppKit
+import MyTimeCore
 import Observation
 import SwiftUI
-import MyTimeCore
+
+/// State for one gate. The gated app has already been quit; the gate belongs to the app, not a process.
 @MainActor @Observable final class GateSession {
     let app: BlockedApp
-    @ObservationIgnored let process: NSRunningApplication
+    @ObservationIgnored let bundleURL: URL?
     @ObservationIgnored let icon: NSImage
     let pauseEndsAt: Date
     let pauseSeconds: Double
@@ -13,10 +15,10 @@ import MyTimeCore
     var quickLookTokens = 1
     var errorMessage: String?
 
-    init(app: BlockedApp, process: NSRunningApplication, pauseEndsAt: Date) {
+    init(app: BlockedApp, bundleURL: URL?, pauseEndsAt: Date) {
         self.app = app
-        self.process = process
-        self.icon = NSWorkspace.shared.icon(forFile: process.bundleURL?.path ?? "")
+        self.bundleURL = bundleURL
+        self.icon = NSWorkspace.shared.icon(forFile: bundleURL?.path ?? "")
         self.pauseEndsAt = pauseEndsAt
         self.pauseSeconds = max(0, pauseEndsAt.timeIntervalSinceNow)
         self.now = Date()
@@ -31,92 +33,140 @@ import MyTimeCore
     }
     func touch() { lastInteraction = Date() }
 }
+
+/// Presents the gate and the countdown pill (spec §6.4–§6.5, §7.3, §7.5).
 @MainActor final class OverlayController {
     unowned let model: AppModel
     private var gatePanel: OverlayPanel?
     private var pillPanel: OverlayPanel?
     private var session: GateSession?
     private let gateClock = RepeatingUITimer()
-    private let rehideTimer = RepeatingUITimer()
-    private let pillTimer = RepeatingUITimer()
-    var gateOwnerPID: pid_t? { session?.process.processIdentifier }
+    private var pillMoveObserver: NSObjectProtocol?
+
+    private static let pillOriginKey = "mytime.pillOrigin"
+    private static let pillSize = NSSize(width: 320, height: 72)
+
+    var gateAppID: UUID? { session?.app.id }
     var isGateVisible: Bool { gatePanel != nil }
+
     init(model: AppModel) { self.model = model }
-    func showGate(app: BlockedApp, process: NSRunningApplication) {
-        guard gateOwnerPID != process.processIdentifier else { return }
+
+    // MARK: Gate
+
+    func showGate(app: BlockedApp, bundleURL: URL?) {
+        guard gateAppID != app.id else { return }
         closeGate()
         let session = GateSession(
-            app: app, process: process,
+            app: app, bundleURL: bundleURL,
             pauseEndsAt: Date().addingTimeInterval(Double(model.core.setting(.gatePauseSeconds))))
         self.session = session
+
         let panel = OverlayPanel(allowsKey: true)
         panel.setRoot(
             GateView(
-                session: session, model: model, onNeverMind: { [weak self] in self?.neverMind() },
+                session: session, model: model,
+                onNeverMind: { [weak self] in self?.neverMind() },
                 onQuickLook: { [weak self] count in self?.quickLook(count) }))
-        let frame = (NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main)!.visibleFrame
-        panel.setFrameOrigin(NSPoint(x: frame.midX - panel.frame.width / 2, y: frame.midY - panel.frame.height / 2))
+        let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
+        if let frame = screen?.visibleFrame {
+            panel.setFrameOrigin(
+                NSPoint(x: frame.midX - panel.frame.width / 2, y: frame.midY - panel.frame.height / 2))
+        }
         gatePanel = panel
-        // Non-activating panel: becomes key for Esc/typing without needing myTime to take activation.
+        // Non-activating panel: becomes key for Esc/typing without myTime taking activation.
         panel.orderFrontRegardless()
         panel.makeKey()
+
         gateClock.start(interval: 1) { [weak self] in
             guard let self, let session = self.session else { return }
             session.now = Date()
             if Date().timeIntervalSince(session.lastInteraction) >= Constants.gateTimeout { self.neverMind() }
         }
-        rehideTimer.start(interval: 0.5) { [weak self] in
-            guard let session = self?.session, !session.process.isHidden else { return }
-            session.process.hide()
-        }
     }
-    private func neverMind() {
-        guard let session else { return }
-        model.perform { $0.recordBackedOff(appID: session.app.id) }
-        let process = session.process
-        closeGate()
-        model.enforcer.terminate(process)
-    }
-    private func quickLook(_ tokens: Int) {
-        guard let session else { return }
-        session.touch()
-        do {
-            _ = try model.perform {
-                try $0.buyQuickLook(appID: session.app.id, tokens: tokens, appLaunchDate: session.process.launchDate)
-            }
-            let process = session.process
-            closeGate()
-            process.unhide()
-            NSApp.yieldActivation(to: process)
-            process.activate()
-            updatePill()
-        } catch let error as EngineError { session.errorMessage = error.userMessage } catch {
-            session.errorMessage = ""
-        }
-    }
+
     func closeGate() {
         gateClock.stop()
-        rehideTimer.stop()
         gatePanel?.orderOut(nil)
         gatePanel = nil
         session = nil
     }
+
+    private func neverMind() {
+        guard let session else { return }
+        model.perform { $0.recordBackedOff(appID: session.app.id) }
+        closeGate()
+    }
+
+    private func quickLook(_ tokens: Int) {
+        guard let session else { return }
+        session.touch()
+        do {
+            // The app was quit when the gate opened; it relaunches now, so launch grace starts now.
+            let relaunchAt = model.displayNow
+            _ = try model.perform {
+                try $0.buyQuickLook(appID: session.app.id, tokens: tokens, appLaunchDate: relaunchAt)
+            }
+            let bundleURL = session.bundleURL
+            closeGate()
+            relaunch(bundleURL)
+        } catch let error as EngineError {
+            session.errorMessage = error.userMessage
+        } catch {
+            session.errorMessage = nil
+        }
+    }
+
+    private func relaunch(_ bundleURL: URL?) {
+        guard let bundleURL else { return }
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.activates = true
+        NSWorkspace.shared.openApplication(at: bundleURL, configuration: configuration) { _, error in
+            if let error { NSLog("myTime: relaunch failed: \(error)") }
+        }
+    }
+
+    // MARK: Pill
+
+    /// Shows or hides the pill. AppModel's countdown timer refreshes the engine every second while it's visible.
     func updatePill() {
         guard model.grantCountdown != nil else {
-            pillPanel?.orderOut(nil)
-            pillPanel = nil
-            pillTimer.stop()
+            if let pillPanel {
+                pillPanel.orderOut(nil)
+                self.pillPanel = nil
+            }
             return
         }
-        if pillPanel == nil {
-            let panel = OverlayPanel(allowsKey: false)
-            panel.setContentSize(NSSize(width: 320, height: 72))
-            panel.contentView = NSHostingView(rootView: PillView(model: model))
-            let frame = NSScreen.main!.visibleFrame
-            panel.setFrameOrigin(NSPoint(x: frame.maxX - 332, y: frame.maxY - 84))
-            panel.orderFrontRegardless()
-            pillPanel = panel
-            pillTimer.start(interval: 1) { [weak self] in self?.updatePill() }
+        guard pillPanel == nil else { return }
+
+        let panel = OverlayPanel(allowsKey: false)
+        panel.setContentSize(Self.pillSize)
+        panel.contentView = NSHostingView(rootView: PillView(model: model))
+        panel.setFrameOrigin(savedPillOrigin() ?? defaultPillOrigin())
+        panel.orderFrontRegardless()
+        pillPanel = panel
+
+        if pillMoveObserver == nil {
+            pillMoveObserver = NotificationCenter.default.addObserver(
+                forName: NSWindow.didMoveNotification, object: nil, queue: .main
+            ) { [weak self] note in
+                MainActor.assumeIsolated {
+                    guard let self, let moved = note.object as? NSWindow, moved === self.pillPanel else { return }
+                    UserDefaults.standard.set(NSStringFromPoint(moved.frame.origin), forKey: Self.pillOriginKey)
+                }
+            }
         }
+    }
+
+    private func defaultPillOrigin() -> NSPoint {
+        let frame = NSScreen.main?.visibleFrame ?? .zero
+        return NSPoint(x: frame.maxX - Self.pillSize.width - 12, y: frame.maxY - Self.pillSize.height - 12)
+    }
+
+    /// The last position the user dragged the pill to, if it's still on a connected screen.
+    private func savedPillOrigin() -> NSPoint? {
+        guard let string = UserDefaults.standard.string(forKey: Self.pillOriginKey) else { return nil }
+        let origin = NSPointFromString(string)
+        let rect = NSRect(origin: origin, size: Self.pillSize)
+        return NSScreen.screens.contains { $0.visibleFrame.intersects(rect) } ? origin : nil
     }
 }

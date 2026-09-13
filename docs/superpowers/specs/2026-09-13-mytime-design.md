@@ -65,7 +65,7 @@ It is for one person, on one Mac (Apple Silicon), installed locally without a de
 | Decision | Why |
 |---|---|
 | Menu-bar app (`LSUIElement`), no Dock icon | Must always run to enforce. The token balance should be glanceable. A Dock app is one ⌘Q away from off. |
-| Blocking = hide immediately, show gate, **quit** on decline or expiry | No official API exists. Hide/quit via `NSRunningApplication` needs **no permissions**. Quitting also silences the app's notifications, which are triggers. The user doesn't need to be reachable. |
+| Blocking = **quit immediately**, show the gate for the app, relaunch it if access is bought | No official API exists. Quitting via `NSRunningApplication` needs **no permissions**. Hiding was tried in Run 1 and rejected: Electron apps un-hide themselves several times during startup, flashing black windows. Quitting on the first launch/activate event leaves no window on screen (measured). Quitting also silences the app's notifications, which are triggers. The user doesn't need to be reachable. |
 | **Event-driven engine, no polling** | The user wants minimal system impact. macOS reports app launches, lock/unlock, and sleep/wake. Deadlines use one scheduled wake-up. Inactivity is sampled every 30 s, and only during focus. Per-second work happens only while a countdown is on screen. |
 | Self-declared focus + idle detection (not an app allowlist) | Allowlists break on legitimate browser and doc reading. The user works mostly on the Mac, and the claim flow covers some off-screen time. |
 | Vesting based on last-input timestamps | Accrual stays exact no matter how often the engine refreshes, which is what makes sparse (30 s) sampling safe. |
@@ -198,7 +198,7 @@ myTime App/
 │       │   ├── SystemEvents.swift      # workspace/distributed notification subscriptions
 │       │   ├── SystemProbe.swift       # clocks, boot session UUID, idle seconds, screen lock
 │       │   ├── AppMonitor.swift        # blocked-process lookup and app notifications
-│       │   ├── Enforcer.swift          # applies EnforcementPolicy: hide/terminate/overlays
+│       │   ├── Enforcer.swift          # applies EnforcementPolicy: quit/gate/relaunch
 │       │   ├── StateStore.swift        # file IO, sentinel, tamper handling
 │       │   ├── Installer.swift         # launchd install / self-heal / uninstall
 │       │   └── WindowRouter.swift      # Settings & Booking NSWindows
@@ -268,7 +268,7 @@ let package = Package(
             │                    └───────────────────────────────────┘               │
             │                           │                                            │
             │   Enforcer ◀──reconcile───┤──state──▶ StateStore ──▶ state.json (HMAC) │
-            │     │ hide/terminate/overlays                                          │
+            │     │ quit/gate/relaunch                                               │
             │     ▼                                                                  │
             │ NSRunningApplication · OverlayPanel (gate / focus card / pill / heads-up)│
             └────────────────────────────────────────────────────────────────────────┘
@@ -276,7 +276,7 @@ let package = Package(
 
 - **EngineCore** (Core) owns all rules and state. It never reads the clock or the system; everything arrives through `UpdateInput` or method parameters. It returns effects and the next wake-up instead of performing side effects.
 - **AppModel** (App) holds `var core: EngineCore`. On every trigger it reads `SystemProbe`, calls `core.update`, runs effects, lets `Enforcer` act on the triggering process, saves, and reschedules `Scheduler`. All UI reads from and sends intents to `AppModel`.
-- **Enforcer** (App) turns `EnforcementPolicy` decisions into hide/terminate calls and overlay presentation.
+- **Enforcer** (App) turns `EnforcementPolicy` decisions into quit calls and gate presentation.
 
 ### 3.5 Refresh cycle (replaces any fixed tick)
 
@@ -310,9 +310,8 @@ let package = Package(
 | Timer | Interval | Runs while |
 |---|---|---|
 | Gate/focus card clock (pause countdown, 60 s timeout, emergency wait) | 1 s | gate or focus card visible |
-| Gate re-hide check (`process.hide()` if `!isHidden`) | 0.5 s | gate or focus card visible |
-| Pill countdown | 1 s | pill visible |
-| Menu bar countdown label | 1 s for grants, 60 s for bookings | a grant or booking countdown is shown in the menu bar |
+| Grant countdown (`refresh(.uiTick)`: pill, menu bar label, and `canExtend` all read current time) | 1 s | a running blocked app has an active grant |
+| Menu bar booking label | 60 s | a booking countdown is shown in the menu bar |
 | Panel refresh (`refresh(.panel)`) | 1 s | menu bar panel open |
 | Heads-up auto-hide | one-shot 8 s | heads-up visible |
 
@@ -918,14 +917,14 @@ User-added blocked apps are lost. That's accepted.
 
 ```swift
 public enum EnforcementTrigger { case launched, activated, startupSweep }
-public enum EnforcementAction: Equatable { case allow, gate, focusCard, keepHidden, terminate }
+public enum EnforcementAction: Equatable { case allow, terminate, terminateAndShowGate, terminateAndShowFocusCard }
 
 public struct EnforcementContext {
-    public var terminationPending: Bool             // myTime already asked this pid to quit
+    public var terminationPending: Bool      // myTime already asked this pid to quit
     public var isAllowed: Bool
     public var focusActive: Bool
-    public var overlayShowingForThisProcess: Bool   // gate/card slot owned by this pid
-    public var overlayBusyWithOtherProcess: Bool    // gate/card slot owned by a different pid
+    public var gateShowingForThisApp: Bool   // gate/card slot is showing for this blocked app
+    public var gateShowingForOtherApp: Bool  // gate/card slot is showing for a different blocked app
 }
 
 public static func decide(trigger: EnforcementTrigger, context: EnforcementContext) -> EnforcementAction
@@ -934,11 +933,11 @@ public static func decide(trigger: EnforcementTrigger, context: EnforcementConte
 Rules, first match wins:
 1. `terminationPending` → `.terminate` (the Enforcer treats a repeat as a no-op)
 2. `isAllowed` → `.allow`
-3. `overlayShowingForThisProcess` → `.keepHidden`
+3. `gateShowingForThisApp` → `.terminate` (reopened while its gate is up: quit quietly, the gate stays)
 4. `trigger == .startupSweep` → `.terminate`
-5. `overlayBusyWithOtherProcess` → `.terminate`
-6. `focusActive` → `.focusCard`
-7. otherwise → `.gate`
+5. `gateShowingForOtherApp` → `.terminate`
+6. `focusActive` → `.terminateAndShowFocusCard`
+7. otherwise → `.terminateAndShowGate`
 
 ### 5.9 Next wake-up (WakeUpPlanner, update step 8)
 
@@ -963,7 +962,7 @@ Booking *starts* need no wake-up. Access is evaluated when an app is launched or
 
 - `SystemEvents` forwards `NSWorkspace` app notifications (main queue) to `AppModel.refresh`. The running application is `userInfo[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication`.
 - A process is a **blocked process** if its `bundleIdentifier` exactly equals one of a blocked app's `bundleIDs` **and** `activationPolicy == .regular`. Match exactly, never by prefix; Discord's helper processes must not match.
-- There is no polling. Coverage comes from launch/activate/unhide notifications, the startup sweep, expiry wake-ups (via `terminateIfNotAllowed`), and the re-hide timer while an overlay is visible.
+- There is no polling. Coverage comes from launch/activate/unhide notifications, the startup sweep, and expiry wake-ups (via `terminateIfNotAllowed`). A blocked app without access never keeps running, so nothing needs re-checking while a gate is up.
 
 ### 6.2 Enforcer.reconcile(process, trigger)
 
@@ -972,10 +971,9 @@ Build an `EnforcementContext` from `core` and overlay state, call `EnforcementPo
 | Action | Behavior |
 |---|---|
 | `.allow` | Nothing. |
-| `.keepHidden` | If `!process.isHidden`, call `process.hide()`. |
 | `.terminate` | §6.3. |
-| `.gate` | `process.hide()`, then present the gate for `(appID, pid, launchDate)`. |
-| `.focusCard` | `process.hide()`, then present the focus card for `(appID, pid, launchDate)`. |
+| `.terminateAndShowGate` | Capture `process.bundleURL`, quit (§6.3), present the gate for `(app, bundleURL)`. |
+| `.terminateAndShowFocusCard` | Capture `process.bundleURL`, quit (§6.3), present the focus card for `(app, bundleURL)`. |
 
 ### 6.3 Terminating
 
@@ -983,22 +981,22 @@ Add the pid to `terminationPending`, then call `process.terminate()`. After 5 s 
 
 ### 6.4 Overlay ownership
 
-- **Overlay slot:** at most one gate or focus card at a time. It is owned by one process.
+- **Overlay slot:** at most one gate or focus card at a time. It belongs to a blocked **app** (the app itself is no longer running).
 - **Pill:** at most one. It shows the running blocked app that has an active **grant**, choosing the one with the least remaining time. Booked sessions never show a pill.
 - **Heads-up:** at most one, independent of the other two.
 
 ### 6.5 Gate outcomes
 
-**Backed off rule:** whenever a gate or focus card closes without the app being opened, call `core.recordBackedOff` exactly once. The only exception is when the process terminated on its own.
+**Backed off rule:** whenever a gate or focus card closes without the app being opened, call `core.recordBackedOff` exactly once.
 
 | User action | Result |
 |---|---|
-| Never mind / Esc / 60 s of no interaction | Backed off, terminate the process, close the gate. |
-| Quick look / Reply succeeds | Close the gate, `process.unhide()`, `NSApp.yieldActivation(to: process)`, `process.activate()`, show the pill. |
-| Start Focus (0-token state) | Backed off, `core.startFocus()`, terminate the process, close the gate. |
-| Book a session… | Backed off, open the Booking window, terminate the process, close the gate. |
+| Never mind / Esc / 60 s of no interaction | Backed off, close the gate. |
+| Quick look / Reply succeeds | Buy with `appLaunchDate = now` (launch grace covers the relaunch), close the gate, relaunch the app with `NSWorkspace.shared.openApplication(at: bundleURL, configuration:)` (`activates = true`). The pill appears once the app is running. |
+| Start Focus (0-token state) | Backed off, `core.startFocus()`, close the gate. |
+| Book a session… | Backed off, open the Booking window, close the gate. |
 | Emergency flow completes | Same as a successful quick look. |
-| Process terminates while the gate is open | Close the gate; no stat. |
+| The app is opened again while its gate is up | It's quit quietly (§5.8 rule 3); the gate stays. |
 | Focus becomes active while the gate is open | Swap the gate content to the focus card. |
 
 Any interaction with the gate (click, typing, stepper) resets the 60 s timeout. The timeout is suspended during the emergency wait. Timing out at any other point behaves like Never mind, and an emergency pass not yet used stays unused.
@@ -1007,7 +1005,7 @@ Any interaction with the gate (click, typing, stepper) resets the 60 s timeout. 
 
 | User action | Result |
 |---|---|
-| Back to work / Esc / 60 s timeout | Backed off, terminate the process, close the card. |
+| Back to work / Esc / 60 s timeout | Backed off, close the card. |
 | End focus… | `core.endFocus()`, then swap to the gate (with the full 5 s pause). |
 
 ### 6.7 Startup sweep
@@ -1123,7 +1121,7 @@ Errors thrown by core intents appear as one secondary line under the relevant ca
 
 ### 7.5 Countdown pill (OverlayPanel, non-activating, not key) — grants only
 
-- Position: top-right of the main screen's `visibleFrame`, 12 pt inset. Capsule, ~220×44 pt.
+- Position: top-right of the main screen's `visibleFrame`, 12 pt inset, or wherever the user last dragged it (stored in UserDefaults `mytime.pillOrigin`, used only if still on a connected screen). Capsule, ~220×44 pt.
 - Content: app icon (18 pt) + text.
   - `"<App> · clock(remaining)"`
   - for emergency grants: `"Emergency · clock(remaining)"`
@@ -1301,7 +1299,7 @@ Cases that carry values: `invalidAmount(max:)`, `bookingTooSoon(leadSeconds:)`, 
   - `isOpaque = false`, `backgroundColor = .clear`, `hasShadow = true`
   - `level = .floating` (gate: `.modalPanel`)
   - `collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]`
-  - `hidesOnDeactivate = false`
+  - `hidesOnDeactivate = false`, `isMovableByWindowBackground = true` (every overlay can be dragged by any non-control area; the gate re-centers each time it opens)
   - content via `NSHostingView`
   - when showing the gate, call `orderFrontRegardless()` then `makeKey()`. Do **not** call `NSApp.activate`: since macOS 14 a background app can't take activation while another app is in front, and the gate would render inactive (verified in Run 1 review).
 - **Accessibility:** every button has a label; follow system contrast.
@@ -1462,12 +1460,12 @@ Each run appends its steps, run against `scripts/build.sh --dev`. Each step stat
 1. **Install:** the menu bar shows `DEV ◆ 0`. `launchctl print gui/$(id -u)/local.mytime.agent` shows the job running.
 2. **Keep-alive:** force quit myTime in Activity Monitor → it's back within ~5 s.
 3. **Startup sweep:** with Discord open, `launchctl kickstart -k gui/$(id -u)/local.mytime.agent` → Discord quits with no gate.
-4. **Gate, no tokens:** open Discord → it's hidden, the gate appears, options stay locked for 5 s, and "No tokens yet…" shows.
+4. **Gate, no tokens:** open Discord → it quits with no window flashing, the gate appears, options stay locked for 5 s, and "No tokens yet…" shows. Opening Discord again while the gate is up quits it quietly without a second gate. The gate can be dragged.
 5. **Never mind:** Discord quits.
 6. **Quick look:**
    - Press "+1 token" twice, open Discord, wait 5 s, buy 2.
-   - Discord appears, and the pill and menu bar count down from 1:00 (after launch grace).
-   - At ≤ 10 s the pill turns warm and offers +30 s.
+   - Discord relaunches, and the pill and menu bar count down from 1:00 (after launch grace).
+   - At ≤ 10 s (not later) the pill turns warm and offers +30 s. The pill can be dragged and reopens where it was left.
    - At 0, Discord quits within ~1 s.
 7. **Idle cost:** with nothing unlocked and the panel closed, watch Activity Monitor → Energy for 2 minutes → myTime shows 0.0 CPU and near-zero idle wake-ups.
 

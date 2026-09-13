@@ -1,7 +1,7 @@
 import AppKit
 enum RefreshReason {
     case launch, appLaunched(NSRunningApplication), appActivated(NSRunningApplication), appTerminated(pid_t),
-        screenLocked, screenUnlocked, willSleep, didWake, willPowerOff, clockChanged, wakeUp, intent, panel
+        screenLocked, screenUnlocked, willSleep, didWake, willPowerOff, clockChanged, wakeUp, intent, panel, uiTick
 }
 @MainActor final class SystemEvents {
     private let handler: (RefreshReason) -> Void
