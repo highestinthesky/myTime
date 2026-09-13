@@ -102,7 +102,7 @@ It is for one person, on one Mac (Apple Silicon), installed locally without a de
 | Not focusing, nothing unlocked, no myTime UI open | **Zero** scheduled timers except the next deadline (day start, pending change). CPU 0.0%. Idle wake-ups ≈ 0. |
 | Focusing | One wake-up every ~30 s (5 s tolerance). |
 | Short countdown on screen (pill, gate, open panel) | 1 Hz UI updates, only while visible. |
-| Memory | < 50 MB RSS. |
+| Memory | < 50 MB memory footprint (the Activity Monitor "Memory" column). Measured after Run 1: 16 MB. |
 
 ### 3.2 Process model and installation
 
@@ -302,7 +302,7 @@ let package = Package(
 4. Execute `result.effects` (§4.9).
 5. If the reason is `.appLaunched` or `.appActivated` for a blocked process, run `Enforcer.reconcile(process, trigger:)`. For `.appTerminated`, close any overlay owned by that pid.
 6. Update the activity assertion (§3.2) and the UI timers (§3.6).
-7. Save if `core.state` changed since the last save (atomic write).
+7. Save (atomic write) if anything other than `state.clock` changed since the last save, or if the saved clock is ≥ 60 s old. Updates run on every app switch, so saving clock-only changes every time would write to disk constantly. Also save immediately on `.willSleep` and `.willPowerOff`.
 8. `Scheduler.schedule(result.nextWakeUp)`. This replaces any pending timer. `critical` wake-ups use `tolerance = 1 s`; others use `5 s`. `nil` means no timer.
 
 ### 3.6 UI timers (exist only while their UI is visible)
@@ -751,7 +751,7 @@ while progressSeconds >= P:
 
 ### 5.3 Tokens and grants
 
-Launch grace: `startsAt = max(now, (appLaunchDate ?? now) + Constants.launchGrace /*15 s*/)`.
+Launch grace: `startsAt = appLaunchDate == nil ? now : max(now, appLaunchDate! + Constants.launchGrace /*15 s*/)`. Grace only applies when the launch time is known.
 
 **buyQuickLook(appID, tokens n):** throws, in this order, if:
 - the app ID is not in the block list → `.unknownApp`
@@ -1084,7 +1084,7 @@ DEV builds prefix the text with `DEV `.
 **Layout:**
 - App icon (64 pt, from `NSWorkspace.shared.icon(forFile: bundleURL.path)`).
 - Title: **"Still want to open <App>?"**
-- Subtitle: `"<n> tokens · 1 token = <P in min> min of focus"`.
+- Subtitle: `"<n> tokens · 1 token = <short(P)> of focus"` (e.g. "15 min"; "15 s" in DEV).
 - **Pause phase** (`gatePauseSeconds`, default 5 s): a thin ring drains linearly around the icon, labeled `"Options unlock in <s>s"`. Everything except **Never mind** is disabled.
 - **Choose phase:** show only the rows whose mode is enabled for the app.
   - **Quick look** card:
@@ -1297,13 +1297,13 @@ Cases that carry values: `invalidAmount(max:)`, `bookingTooSoon(leadSeconds:)`, 
   - pill warm transition: 0.3 s color cross-fade
   - honor `accessibilityReduceMotion`: fades only, no scale
 - **OverlayPanel:**
-  - `NSPanel` subclass, `styleMask [.borderless, .nonactivatingPanel]` (the gate drops `.nonactivatingPanel` and overrides `canBecomeKey = true`)
+  - `NSPanel` subclass, `styleMask [.borderless, .nonactivatingPanel]` for **every** overlay. The gate overrides `canBecomeKey = true` so Esc and text fields work without activating myTime.
   - `isOpaque = false`, `backgroundColor = .clear`, `hasShadow = true`
   - `level = .floating` (gate: `.modalPanel`)
   - `collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]`
   - `hidesOnDeactivate = false`
   - content via `NSHostingView`
-  - when showing the gate, call `NSApp.activate()` then `makeKeyAndOrderFront(nil)`
+  - when showing the gate, call `orderFrontRegardless()` then `makeKey()`. Do **not** call `NSApp.activate`: since macOS 14 a background app can't take activation while another app is in front, and the gate would render inactive (verified in Run 1 review).
 - **Accessibility:** every button has a label; follow system contrast.
 
 ---

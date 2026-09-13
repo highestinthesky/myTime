@@ -28,9 +28,12 @@ myTime is a macOS menu-bar app that gates distracting apps (Discord by default) 
 3. Core API used by the app must be `public`, with explicit `public init`s.
 4. Persisted dictionaries use `String` keys.
 5. Keep files focused (~300 lines max). New rules go in Core with tests, never in views.
-6. No third-party dependencies. No network, UserNotifications, Accessibility APIs, AppleScript, sandbox, or entitlements.
-7. User-facing copy comes from the spec verbatim. The tone is calm and neutral: no guilt, no exclamation marks, no red, no sounds.
-8. Don't add features, settings, or copy that aren't in the spec.
+6. **Readable formatting is required.** One statement per line, no semicolons, no multiple declarations on a line. Before finishing, run `swift format --in-place --recursive Sources Tests` (config: `.swift-format`). Code that is compressed onto long lines will be rejected even if it builds.
+7. **Tests given in a plan are copied verbatim** into the named files. You may add tests; you may not replace, condense, rename, or skip them. Don't write implementation code that special-cases what a test checks — implement the rule as the spec states it.
+8. No third-party dependencies. No network, UserNotifications, Accessibility APIs, AppleScript, sandbox, or entitlements.
+9. User-facing copy comes from the spec verbatim. The tone is calm and neutral: no guilt, no exclamation marks, no red, no sounds.
+10. Don't add features, settings, or copy that aren't in the spec.
+11. Every behavior change from the spec — including storage locations and rule logic — goes in `IMPLEMENTATION_NOTES.md`, even if it seems minor.
 
 ## Working in runs
 

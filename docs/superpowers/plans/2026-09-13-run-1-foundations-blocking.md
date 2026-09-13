@@ -1360,7 +1360,7 @@ Expected: compile errors (`EngineCore` not found).
   8. `nextWakeUp = WakeUpPlanner.next(state:runtime:now:nextDayStart:)`.
 - **`start`:** step 1 → `runtime = EngineRuntime()` → `return update(input)`.
 - **`buyQuickLook`:** check order is `unknownApp` → `modeNotAllowed` → `focusActive` → `invalidAmount(max:)` → `notEnoughTokens`. Then apply §5.3.
-  - `startsAt = max(now, (appLaunchDate ?? now) + Constants.launchGrace)`.
+  - `startsAt = appLaunchDate.map { max(now, $0 + Constants.launchGrace) } ?? now` (corrected in review: no grace when the launch date is unknown).
   - History: `"Quick look in <App> · <DurationFormat.clock(duration)> · <n> ◆"`.
 - **`canExtend`/`extendGrant`:** per §5.3. `extendGrant` throws `.unknownGrant` if the id is missing, otherwise `.cannotExtend` when `!canExtend`. History: `"Extended <App> · +<quickLookSecondsPerToken> s"`.
 - **`recordBackedOff`:** history `"Backed off from <App>"`.
