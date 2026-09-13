@@ -487,6 +487,7 @@ public struct EngineRuntime: Equatable {
     public var blockedRunningAtLastUpdate: Bool = false
     public var awayStartUptime: Double? = nil   // non-nil = away
     public var lastActiveBookingID: UUID? = nil
+    public var sleepStartContinuous: Double? = nil  // continuous clock when the Mac went to sleep
 }
 ```
 
@@ -718,11 +719,11 @@ runtime.unvestedSeconds = trailing
 ```
 
 - Away tracking continues after an auto-end, so the gap is still recorded when the user returns.
-- **Sampling independence:** because vesting uses the last-input timestamp, the credited total is the same whether updates run every 1 s or every 30 s. A unit test enforces this (§11.1).
+- **Sampling independence:** vesting uses the last-input timestamp, so time before each input is credited exactly however often updates run. The one unavoidable difference: coming back from away is noticed at the next check (up to `focusCheckInterval` later), and that stretch counts as away time instead of focus. So *focus + unclaimed away time* is the same at any update frequency (±2 s), and focus alone differs by at most one check interval per return. A unit test enforces this (§11.1).
 
 **Sleep and wake:**
-- `handleWillSleep(input)`: run `update(input)`. Then, if focusing and not away, set `awayStartUptime = input.uptime - input.idleSeconds` and `unvestedSeconds = 0`.
-- `handleDidWake(input)`: if away, set `awayStartUptime = input.uptime`, so time asleep, and time idle before sleeping, is never claimable. Set `runtime.lastUptime = input.uptime`, then run `update(input)`.
+- `handleWillSleep(input)`: run `update(input)`. Set `runtime.sleepStartContinuous = input.continuous`. Then, if focusing and not away, set `awayStartUptime = input.uptime - input.idleSeconds` and `unvestedSeconds = 0`.
+- `handleDidWake(input)`: if focusing and `input.continuous − sleepStartContinuous ≥ autoEndAwaySeconds`, end focus without vesting (history `"Focus ended · Mac was asleep"`). If away, set `awayStartUptime = input.uptime`, so time asleep, and time idle before sleeping, is never claimable. Set `runtime.lastUptime = input.uptime` and `sleepStartContinuous = nil`, then run `update(input)`.
 
 **vest(x):**
 
@@ -1040,7 +1041,7 @@ The label shows an icon plus optional text, with `monospacedDigit()`. Precedence
 | Focusing | MenuBarIcon ring (§7.1.1) | `"<tokens>"` | on refresh (~30 s) |
 | Otherwise | SF Symbol `diamond.fill` | `"<tokens>"` | on refresh |
 
-**Claim dot:** when `claimableSeconds ≥ Constants.minClaimable` and the state is not one of the countdown rows, overlay a 5 pt accent-colored dot at the icon's top-right.
+**Claim dot:** when `claimableSeconds ≥ Constants.minClaimable` and the state is not one of the countdown rows, draw a small dot into the top-right of the icon image itself, with a clear halo so it never touches the glyph. It stays monochrome (template), like system menu bar indicators.
 
 DEV builds prefix the text with `DEV `.
 
@@ -1396,7 +1397,7 @@ Build `EngineCore` with fixed dates and feed synthetic `UpdateInput`s. Each run 
 **FocusAccrual**
 - Credits eligible time only while focusing, not away, and with no blocked app running at the previous update.
 - 900 s of vested time mints exactly 1 token; the remainder carries over across sessions.
-- **Sampling independence:** a scripted 20-minute scenario (active use, a 7-minute idle, a blocked app running for 2 minutes, active use) produces the same vested total ±1 s with updates every 1 s and every 30 s.
+- **Sampling independence:** a scripted 25-minute scenario (typing, a 6¾-minute absence, a blocked app open for 2 minutes, typing) gives the same focus + unclaimed away total (±2 s) with updates every 1 s and every 30 s; focus alone differs by at most one interval.
 - The idle threshold crossing discards unvested time, so a 5-minute idle credits 0 for those minutes.
 - Screen lock enters away immediately. Unlock plus input returns and records the gap if ≥ `minAwayGap`.
 - Sleep → wake: time asleep never appears in `unclaimedAwaySeconds`.
