@@ -35,6 +35,8 @@ myTime is a macOS menu-bar app that gates distracting apps (Discord by default) 
 ## Working in runs
 
 - The app is built in the runs listed in spec §12. Build only the run you were given.
+- Each run has a task-by-task plan in `docs/superpowers/plans/`. Follow it in order; its tests are the contract.
+- Build on the Mac itself; a Linux sandbox can't compile AppKit. Only run `swift build` / `swift test`. Installing (`scripts/build.sh`) and the manual tests are the reviewer's job.
 - At the end of a run:
   - `swift build` and `swift test` must pass.
   - Append that run's steps to `docs/MANUAL_TESTS.md`.

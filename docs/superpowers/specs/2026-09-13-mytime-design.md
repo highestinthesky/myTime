@@ -343,8 +343,8 @@ public struct PersistedState: Codable, Equatable {
     public var clock: TrustedClockState
     public var tamperNoticeUntil: Date?        // show tamper banner until this time
 
-    public static func fresh(now: Date) -> PersistedState      // defaults, Discord blocked, 0 tokens
-    public static func penalized(now: Date) -> PersistedState  // §5.7
+    public static func fresh(now: Date, timeZone: TimeZone) -> PersistedState      // defaults, Discord blocked, 0 tokens
+    public static func penalized(now: Date, timeZone: TimeZone) -> PersistedState  // §5.7
 }
 
 public struct FocusSession: Codable, Equatable {
@@ -534,14 +534,15 @@ AppModel handling:
 
 ## 5. Rules (implemented in MyTimeCore)
 
-`EngineCore` exposes the API below. Intents use `core.now`, the trusted time from the last update; AppModel always runs `refresh(.intent)` right after an intent. Throwing intents throw `EngineError`, which has `userMessage: String` (§7.9).
+`EngineCore` exposes the API below. Intents use `core.now`, the trusted time from the last update. Because the engine may sit idle for minutes between refreshes, AppModel runs `refresh(.intent)` **immediately before and after** every intent; otherwise a grant bought after a quiet period would be timestamped in the past. Throwing intents throw `EngineError`, which has `userMessage: String` (§7.9).
 
 ```swift
 public struct EngineCore {
     public var state: PersistedState
     public var runtime: EngineRuntime
     public private(set) var now: Date
-    public init(state: PersistedState)   // now = Date(timeIntervalSince1970: state.clock.lastWall) until start()
+    public let timeZone: TimeZone        // AppModel passes .current; tests pass a fixed zone
+    public init(state: PersistedState, timeZone: TimeZone)   // now = Date(timeIntervalSince1970: state.clock.lastWall) until start()
 
     // Lifecycle
     public mutating func start(_ input: UpdateInput) -> UpdateResult     // §5.2 launch handling, then update
@@ -581,6 +582,7 @@ public struct EngineCore {
     // Enforcement queries
     public func isAllowed(appID: UUID) -> Bool
     public func activeGrant(appID: UUID) -> AccessGrant?
+    public func remaining(of grant: AccessGrant) -> Double   // max(0, expiresAt − max(now, startsAt))
     public func app(id: UUID) -> BlockedApp?
     public func app(bundleID: String) -> BlockedApp?
 
@@ -751,7 +753,8 @@ while progressSeconds >= P:
 
 Launch grace: `startsAt = max(now, (appLaunchDate ?? now) + Constants.launchGrace /*15 s*/)`.
 
-**buyQuickLook(appID, tokens n):** throws if:
+**buyQuickLook(appID, tokens n):** throws, in this order, if:
+- the app ID is not in the block list → `.unknownApp`
 - the app lacks `.quickLook` → `.modeNotAllowed`
 - focus is active → `.focusActive`
 - `n` is not in `1...quickLookMaxTokens` → `.invalidAmount`
@@ -939,7 +942,7 @@ Rules, first match wins:
 
 ### 5.9 Next wake-up (WakeUpPlanner, update step 8)
 
-The earliest of these candidates, or `nil` if there are none:
+The earliest of these candidates that is strictly after `now` (overdue items are handled earlier in the same update, and ignoring them prevents a busy loop). On a tie, the critical candidate wins. Returns `nil` if there are none:
 
 | Candidate | Critical |
 |---|---|
@@ -1188,8 +1191,12 @@ If `abs(clock.offsetSeconds) > 120`, also show: "Your Mac's clock was changed. m
 
 ### 7.10 Error copy (`EngineError.userMessage`)
 
+Cases that carry values: `invalidAmount(max:)`, `bookingTooSoon(leadSeconds:)`, `invalidDuration(minSeconds:maxSeconds:)`.
+
 | Case | Message |
 |---|---|
+| `unknownApp` | "That app isn't blocked anymore." |
+| `unknownGrant` | "That access has already ended." |
 | `modeNotAllowed` | "That option is turned off for this app." |
 | `focusActive` | "End your focus session first." |
 | `invalidAmount` | "Choose between 1 and <max> tokens." |
@@ -1213,7 +1220,7 @@ If `abs(clock.offsetSeconds) > 120`, also show: "Your Mac's clock was changed. m
 
 ### 8.1 SettingKey (user-configurable)
 
-`SettingKey: String, CaseIterable, Codable`. Each case has `title`, `group`, `unit` (`.seconds`, `.count`, `.hourOfDay`), `defaultValue`, `range`, `step`, and `looserWhen` (`.higher`, `.lower`, `.anyChange`). In DEV builds, use the DEV default, and every range's lower bound becomes 1 (except `dayStartHour`, which stays 0–23).
+`SettingKey: String, CaseIterable, Codable`. Each case has `title`, `group`, `unit` (`.seconds`, `.count`, `.hourOfDay`), `defaultValue`, `range`, `step`, and `looserWhen` (`.higher`, `.lower`, `.anyChange`). In DEV builds, use the DEV default, and each range's lower bound becomes `min(release lower bound, 1)` (`dayStartHour` stays 0–23).
 
 | rawValue | Title | Group | Default | DEV default | Range | Step | Looser when |
 |---|---|---|---|---|---|---|---|
@@ -1511,7 +1518,9 @@ After each run: `swift build` and `swift test` pass, `scripts/build.sh --dev` in
 **App**
 - `main.swift` modes, `Installer` (install + self-heal; uninstall can be a stub until Run 4), `SystemProbe`, `SystemEvents` (app events and clock change; others later), `StateStore` (load/save/sentinel/tamper), `AppModel.refresh` + `Scheduler`, `AppMonitor`, `Enforcer`, `OverlayPanel`.
 - `GateView`: pause, Never mind, quick look, no-tokens text without the Start Focus button, and the footer link hidden until Run 3.
-- `PillView`, `MenuBarLabel` (diamond and hourglass rows), a minimal panel (tokens row + DEV row), startup sweep, `Packaging/Info.plist`, `scripts/build.sh`, `scripts/uninstall.sh`.
+- `PillView`, `MenuBarLabel` (diamond and hourglass rows), a minimal panel (tokens row + DEV row), startup sweep, activity assertion, `Packaging/Info.plist`, `scripts/build.sh`, `scripts/uninstall.sh`.
+
+**Plan:** `docs/superpowers/plans/2026-09-13-run-1-foundations-blocking.md`.
 
 **Tests:** TrustedClock, CalendarKeys, daily reset, grants, StateCodec, EnforcementPolicy, WakeUpPlanner.
 
@@ -1527,7 +1536,6 @@ After each run: `swift build` and `swift test` pass, `scripts/build.sh --dev` in
 - panel focus block, claim row, `HoldButton`, today strip, "Resets at" caption
 - `FocusCardView`
 - gate Start Focus button
-- activity assertion
 
 **Tests:** FocusAccrual (including sampling independence), launch handling.
 
