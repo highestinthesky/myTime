@@ -90,9 +90,26 @@ public enum DurationFormat {
         formatter.setLocalizedDateFormatFromTemplate("EEEEMMMd")
         return formatter.string(from: date)
     }
+    /// Whole seconds without rounding, for settings: "45 s", "15 min 15 s", "1h 30m", "1h 0m 5s".
+    public static func exact(_ seconds: Int) -> String {
+        let total = max(0, seconds)
+        let hours = total / 3600
+        let minutes = (total % 3600) / 60
+        let remainder = total % 60
+        if hours > 0 {
+            if remainder > 0 {
+                return "\(hours)h \(minutes)m \(remainder)s"
+            }
+            return minutes > 0 ? "\(hours)h \(minutes)m" : "\(hours)h"
+        }
+        if minutes > 0 {
+            return remainder > 0 ? "\(minutes) min \(remainder) s" : "\(minutes) min"
+        }
+        return "\(remainder) s"
+    }
     public static func setting(_ key: SettingKey, _ value: Int, locale: Locale) -> String {
         switch key.unit {
-        case .seconds: return short(Double(value))
+        case .seconds: return exact(value)
         case .count: return "\(value)"
         case .hourOfDay: return hourOfDay(value, locale: locale)
         }

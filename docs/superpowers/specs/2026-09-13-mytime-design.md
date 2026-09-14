@@ -1,6 +1,6 @@
 # myTime — Design Doc (v1)
 
-**Status:** Approved design, revision 5 · 2026-09-14
+**Status:** Approved design, revision 6 · 2026-09-14
 **Audience:** the implementing model (Codex) and the reviewer (Claude)
 
 **Revision 2 changes:**
@@ -29,6 +29,10 @@
 - exact pruning cutoffs and `weeklyRetentionWeeks` (§8.2); `DurationFormat.historyDay` for the History tab (§7, §7.9)
 - the Settings window refreshes every second while open (§3.6); every submitted change re-checks running apps (§6.8)
 - uninstall trashes the app, then shuts down the same way Quit does (§3.2)
+
+**Revision 6 changes** (from Run 4 user testing):
+- General settings are typed, not stepped: a whole number plus a seconds/minutes/hours menu, a number for counts, an hour menu for the day start. Settings have no step size any more (§7.9, §8.1)
+- setting values and summaries show exact durations (`DurationFormat.exact`), so "15 min 15 s" is never shown as "15 min" (§7)
 
 ---
 
@@ -1089,7 +1093,8 @@ In Settings, if the chosen app is running, the confirmation says it will be clos
   - `clock(s)`: `m:ss` under 1 h, `h:mm:ss` otherwise
   - `short(s)`: `"45 s"`, `"12 min"`, `"2h 10m"`
   - `hourOfDay(h)`: locale time style, e.g. `"4:00 AM"`
-  - `setting(key, v)`: formats by the key's unit
+  - `exact(s)`: whole seconds without rounding: `"45 s"`, `"15 min"`, `"15 min 15 s"`, `"1h 30m"`, `"1h 0m 5s"`
+  - `setting(key, v)`: formats by the key's unit (`exact` for seconds, the number for counts, `hourOfDay` for hours)
   - `timeOfDay(date, timeZone, locale)`: locale time style, e.g. `"8:05 PM"`
   - `dayLabel(date, now, timeZone, locale)`: `"Today"`, `"Tomorrow"`, or the abbreviated weekday (`"Wed"`), by calendar day
   - `sessionStart(date, now, timeZone, locale)`: `"<dayLabel> <timeOfDay>"`, e.g. `"Today 8:05 PM"`. Copy that says `<date, time>` uses this.
@@ -1239,9 +1244,13 @@ If `abs(clock.offsetSeconds) > 120`, also show: "Your Mac's clock was changed. m
 Open it with `WindowRouter.showSettings(tab:)` from the panel gear, the pending capsule (Pending tab), and `applicationShouldHandleReopen`. If it's already open, switch to the requested tab and bring it forward. While it's open, the 1 s Settings refresh runs (§3.6).
 
 **General tab**
-- A `Form` grouped by §8.1 "Group". Each row has the title and a `Stepper` with the formatted value.
+- A `Form` grouped by §8.1 "Group". Each row has the title and a typed value:
+  - seconds keys: a whole-number field plus a menu of `DurationUnit` (seconds, minutes, hours). It opens in `DurationUnit.natural(for:)`, the largest unit that shows the value as a whole number (zero shows as minutes). The stored value is number × unit.
+  - count keys: a whole-number field
+  - `dayStartHour`: a menu of `hourOfDay(0…23)`
+- Under a row whose text isn't a whole number: "Enter a whole number." Under a value outside the key's range: `rangeMessage` = "Choose between `setting(lower)` and `setting(upper)`." Apply Changes is disabled while any row has a message.
 - The `dayStartHour` row shows the caption "Changing this always waits `short(looseningDelaySeconds)`."
-- Rows edit a local **draft**. The bottom bar has **Revert** and **Apply Changes** (enabled when the draft differs).
+- Rows edit a local **draft**. The bottom bar has **Revert** and **Apply Changes** (both enabled only when the draft differs).
 - Apply submits each changed key, then shows an alert titled "Settings updated" listing `"Applied now: …"` and `"Applies <date, time>: …"` lines.
 
 **Blocked Apps tab**
@@ -1307,29 +1316,29 @@ Cases that carry values: `invalidAmount(max:)`, `bookingTooSoon(leadSeconds:)`, 
 
 ### 8.1 SettingKey (user-configurable)
 
-`SettingKey: String, CaseIterable, Codable`. Each case has `title`, `group`, `unit` (`.seconds`, `.count`, `.hourOfDay`), `defaultValue`, `range`, `step`, and `looserWhen` (`.higher`, `.lower`, `.anyChange`). In DEV builds, use the DEV default, and each range's lower bound becomes `min(release lower bound, 1)` (`dayStartHour` stays 0–23).
+`SettingKey: String, CaseIterable, Codable`. Each case has `title`, `group`, `unit` (`.seconds`, `.count`, `.hourOfDay`), `defaultValue`, `range`, and `looserWhen`. Any whole value inside the range is valid (`.higher`, `.lower`, `.anyChange`). In DEV builds, use the DEV default, and each range's lower bound becomes `min(release lower bound, 1)` (`dayStartHour` stays 0–23).
 
-| rawValue | Title | Group | Default | DEV default | Range | Step | Looser when |
-|---|---|---|---|---|---|---|---|
-| `focusSecondsPerToken` | Focus per token | Earning | 900 | 15 | 300–3600 | 60 | lower |
-| `dayStartHour` | Day starts at | Earning | 4 | 4 | 0–23 | 1 | any change |
-| `idleThresholdSeconds` | Pause after no activity | Earning | 300 | 20 | 60–1800 | 60 | higher |
-| `awayClaimSecondsPerDay` | Away time you can count per day | Earning | 1800 | 60 | 0–7200 | 300 | higher |
-| `autoEndAwaySeconds` | End focus after away for | Earning | 1800 | 60 | 600–7200 | 300 | higher |
-| `quickLookSecondsPerToken` | Quick look per token | Spending | 30 | 30 | 10–300 | 5 | higher |
-| `quickLookMaxTokens` | Max tokens per quick look | Spending | 3 | 3 | 1–10 | 1 | higher |
-| `replyTokenCost` | Reply mode cost | Spending | 2 | 2 | 1–10 | 1 | lower |
-| `replySeconds` | Reply mode length | Spending | 180 | 60 | 60–900 | 30 | higher |
-| `replyPerDay` | Reply mode uses per day | Spending | 3 | 3 | 0–10 | 1 | higher |
-| `gatePauseSeconds` | Gate pause | Spending | 5 | 5 | 0–30 | 1 | lower |
-| `weeklyAllowanceSeconds` | Session time per week | Sessions | 18000 | 1200 | 0–72000 | 1800 | higher |
-| `bookingLeadSeconds` | Book at least this far ahead | Sessions | 600 | 60 | 0–86400 | 300 | lower |
-| `bookingMaxSeconds` | Longest session | Sessions | 10800 | 600 | 1800–28800 | 900 | higher |
-| `bookingExtensionSeconds` | Session extension | Sessions | 900 | 60 | 0–3600 | 300 | higher |
-| `emergencyPerWeek` | Emergency passes per week | Emergency | 1 | 1 | 0–3 | 1 | higher |
-| `emergencyWaitSeconds` | Emergency wait | Emergency | 60 | 10 | 10–600 | 10 | lower |
-| `emergencyAccessSeconds` | Emergency access length | Emergency | 600 | 60 | 60–3600 | 60 | higher |
-| `looseningDelaySeconds` | Delay for loosening changes | Safety | 86400 | 60 | 3600–604800 | 3600 | lower |
+| rawValue | Title | Group | Default | DEV default | Range | Looser when |
+|---|---|---|---|---|---|---|
+| `focusSecondsPerToken` | Focus per token | Earning | 900 | 15 | 300–3600 | lower |
+| `dayStartHour` | Day starts at | Earning | 4 | 4 | 0–23 | any change |
+| `idleThresholdSeconds` | Pause after no activity | Earning | 300 | 20 | 60–1800 | higher |
+| `awayClaimSecondsPerDay` | Away time you can count per day | Earning | 1800 | 60 | 0–7200 | higher |
+| `autoEndAwaySeconds` | End focus after away for | Earning | 1800 | 60 | 600–7200 | higher |
+| `quickLookSecondsPerToken` | Quick look per token | Spending | 30 | 30 | 10–300 | higher |
+| `quickLookMaxTokens` | Max tokens per quick look | Spending | 3 | 3 | 1–10 | higher |
+| `replyTokenCost` | Reply mode cost | Spending | 2 | 2 | 1–10 | lower |
+| `replySeconds` | Reply mode length | Spending | 180 | 60 | 60–900 | higher |
+| `replyPerDay` | Reply mode uses per day | Spending | 3 | 3 | 0–10 | higher |
+| `gatePauseSeconds` | Gate pause | Spending | 5 | 5 | 0–30 | lower |
+| `weeklyAllowanceSeconds` | Session time per week | Sessions | 18000 | 1200 | 0–72000 | higher |
+| `bookingLeadSeconds` | Book at least this far ahead | Sessions | 600 | 60 | 0–86400 | lower |
+| `bookingMaxSeconds` | Longest session | Sessions | 10800 | 600 | 1800–28800 | higher |
+| `bookingExtensionSeconds` | Session extension | Sessions | 900 | 60 | 0–3600 | higher |
+| `emergencyPerWeek` | Emergency passes per week | Emergency | 1 | 1 | 0–3 | higher |
+| `emergencyWaitSeconds` | Emergency wait | Emergency | 60 | 10 | 10–600 | lower |
+| `emergencyAccessSeconds` | Emergency access length | Emergency | 600 | 60 | 60–3600 | higher |
+| `looseningDelaySeconds` | Delay for loosening changes | Safety | 86400 | 60 | 3600–604800 | lower |
 
 ### 8.2 Constants (not user-configurable; `Constants.swift`)
 
@@ -1545,6 +1554,9 @@ Build `EngineCore` with fixed dates and feed synthetic `UpdateInput`s. Each run 
 
 **Pruning**
 - Runs only with the daily reset; cutoffs keep the boundary day and week; canceled and finished bookings by their end; history capped.
+
+**Setting input**
+- `DurationUnit.natural(for:)`, `DurationFormat.exact`, exact `setting` formatting, and `rangeMessage`.
 
 **History labels**
 - `historyDay` gives Today / Yesterday / full weekday and date.

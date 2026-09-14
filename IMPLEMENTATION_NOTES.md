@@ -160,3 +160,9 @@ Verification: `swift build`, `swift build -Xswiftc -DDEV_TIMESCALE`, `swift test
 
 - Core matches the reference used to validate the plan tests (tests verbatim, 122/122).
 - Restored the history cap in `record()`. Run 4 had removed it, leaving history to grow all day until the daily prune; the prune still trims too.
+
+### Follow-up changes after the user tested Run 4 (Claude, spec revision 6)
+
+| Request | Change |
+|---|---|
+| Settings can't be customized; steppers add fixed steps to odd values ("15 min 15 s") | General tab rows are typed: whole number + seconds/minutes/hours menu (opens in the largest unit that fits exactly), number fields for counts, an hour menu for the day start. Inline "Enter a whole number." / "Choose between … and …." messages disable Apply. `SettingKey.step` removed. Setting values and change summaries use `DurationFormat.exact`, so they're never rounded. `SettingInputTests` (4). |
