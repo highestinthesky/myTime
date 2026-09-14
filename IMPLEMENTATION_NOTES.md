@@ -132,3 +132,31 @@ Checked: both builds and `swift test` (76 tests, 0 failures); the four plan test
 | Giant "DEV" in the menu bar on the laptop screen | Removed the `DEV ` label prefix; the panel title reads "myTime · DEV" instead. |
 
 Verification: `swift build`, `swift build -Xswiftc -DDEV_TIMESCALE`, `swift test` → 107 tests, 0 failures.
+
+## Run 4
+
+### Deviations
+
+- The History tab shows the empty-state line "No history yet." This copy is not in spec revision 5, but is explicitly allowed and required to be recorded by the Run 4 plan.
+
+### Not verified
+
+- The installed-app manual checks in `docs/MANUAL_TESTS.md` steps 20–25 and the release re-run of steps 1–7. Per the run instructions, no install script, LaunchAgent command, or manual UI workflow was run.
+- Live macOS UI behavior, including Settings layout, app-picker and modal-alert interaction, window reopen/tab switching, app icons, running-app closure, Settings timer lifecycle, and uninstall moving the installed bundle to Trash.
+
+### Commands run
+
+- `swift test --filter SettingsPolicyTests` — first sandboxed attempt could not write the compiler module cache; rerun with cache access and failed with the expected missing-API compile errors.
+- `swift test --filter SettingsPolicyTests` — Task 1 passed 13 tests with 0 failures.
+- `swift test` — Task 1 passed 120 tests with 0 failures.
+- `swift test --filter "PruningTests|HistoryFormatTests"` — failed with the expected missing `historyDay` API before Task 2 implementation.
+- `swift test` — Task 2 passed 122 tests with 0 failures.
+- `swift build && swift build -Xswiftc -DDEV_TIMESCALE && swift test` — run after Tasks 3, 4, and 5; both builds and all 122 tests passed each time.
+- `swift format --in-place --recursive Sources Tests` — completed successfully with the repository configuration.
+- `swift build && swift build -Xswiftc -DDEV_TIMESCALE && swift test && swift build -c release --arch arm64 -Xswiftc -DDEV_TIMESCALE` — all four final verification stages passed.
+- Final test summary: `Executed 122 tests, with 0 failures (0 unexpected) in 0.049 (0.056) seconds`.
+
+### Reviewer notes (Claude)
+
+- Core matches the reference used to validate the plan tests (tests verbatim, 122/122).
+- Restored the history cap in `record()`. Run 4 had removed it, leaving history to grow all day until the daily prune; the prune still trims too.

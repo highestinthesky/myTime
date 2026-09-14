@@ -36,7 +36,8 @@ public struct EngineCore {
                 &state.clock, wall: input.wall.timeIntervalSince1970, continuous: input.continuous,
                 bootSessionID: input.bootSessionID))
         let key = CalendarKeys.dayKey(now, dayStartHour: dayStartHour, timeZone: timeZone)
-        if state.tokensDayKey != key {
+        let didReset = state.tokensDayKey != key
+        if didReset {
             let unused = state.tokens
             if unused > 0 { record(.dayReset, "New day · \(unused) unused token\(unused == 1 ? "" : "s") cleared") }
             state.tokens = 0
@@ -45,16 +46,26 @@ public struct EngineCore {
             state.tokensDayKey = key
         }
 
+        var effects = applyDuePending()
+
         // Step 4: focus accrual and away (spec §5.2)
         accrueFocus(input)
 
         let expired = state.grants.filter { $0.expiresAt <= now }.map(\.appID)
         state.grants.removeAll { $0.expiresAt <= now }
-        var effects = Array(Set(expired)).map { EngineEffect.terminateIfNotAllowed(appID: $0) }
+        for appID in Set(expired) {
+            let effect = EngineEffect.terminateIfNotAllowed(appID: appID)
+            if !effects.contains(effect) {
+                effects.append(effect)
+            }
+        }
 
         // Step 6: booking transitions (spec §5.4). A grant expiring as a session ends closes the app once.
         for effect in applyBookingTransitions(input) where !effects.contains(effect) {
             effects.append(effect)
+        }
+        if didReset {
+            prune()
         }
         return UpdateResult(
             effects: effects,

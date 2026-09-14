@@ -18,6 +18,7 @@ import MyTimeCore
     @ObservationIgnored private let countdownTimer = RepeatingUITimer()
     @ObservationIgnored private let bookingLabelTimer = RepeatingUITimer()
     @ObservationIgnored private let panelTimer = RepeatingUITimer()
+    @ObservationIgnored private let settingsTimer = RepeatingUITimer()
     @ObservationIgnored private var lastSaved: PersistedState?
     @ObservationIgnored private var activity: NSObjectProtocol?
     var displayNow: Date { Date().addingTimeInterval(core.state.clock.offsetSeconds) }
@@ -67,7 +68,8 @@ import MyTimeCore
             case let .bookingHeadsUp(bookingID):
                 headsUp.show(.endingSoon, bookingID: bookingID)
             case .uninstall:
-                break
+                saveNow()
+                Installer.uninstall()
             }
         }
         switch reason {
@@ -134,6 +136,18 @@ import MyTimeCore
             try? core.extendBooking(id: id)
         }
     }
+    @discardableResult func submit(_ change: SettingChange) -> SubmitResult {
+        let result = perform { core in
+            core.submit(change, locale: .current)
+        }
+        enforcer.sweep()
+        return result
+    }
+    func cancelPending(id: UUID) {
+        perform { core in
+            core.cancelPending(id: id)
+        }
+    }
     /// Quits for good after the Quit window's reason and wait (spec §5.10). Doesn't return.
     func quit(reason: String) throws {
         try perform { core in
@@ -144,6 +158,14 @@ import MyTimeCore
     }
     func panelDidOpen() { panelTimer.start(interval: 1) { [weak self] in self?.refresh(.panel) } }
     func panelDidClose() { panelTimer.stop() }
+    func settingsDidOpen() {
+        settingsTimer.start(interval: 1) { [weak self] in
+            self?.refresh(.panel)
+        }
+    }
+    func settingsDidClose() {
+        settingsTimer.stop()
+    }
     func saveNow() {
         do {
             try store.save(core.state)

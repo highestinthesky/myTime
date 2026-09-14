@@ -27,6 +27,10 @@ enum Installer {
         let args = NSDictionary(contentsOf: plistURL)?["ProgramArguments"] as? [String]
         if args?.first != exe { try? writePlist(executable: exe) }
     }
+    static func uninstall() -> Never {
+        try? FileManager.default.trashItem(at: Bundle.main.bundleURL, resultingItemURL: nil)
+        stopAgent()
+    }
     /// Removes the LaunchAgent, then stops it. Without the plist nothing restarts myTime,
     /// not even a login, until it's opened again from Applications.
     static func stopAgent() -> Never {

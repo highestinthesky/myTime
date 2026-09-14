@@ -6,8 +6,30 @@ struct PopoverView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(Constants.isDev ? "myTime · DEV" : "myTime")
-                .font(.headline)
+            HStack {
+                Text(Constants.isDev ? "myTime · DEV" : "myTime")
+                    .font(.headline)
+                Spacer()
+                if !model.core.state.pending.isEmpty {
+                    Button("\(model.core.state.pending.count) pending") {
+                        model.router.showSettings(tab: .pending)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .buttonBorderShape(.capsule)
+                }
+                Button {
+                    model.router.showSettings(tab: .general)
+                } label: {
+                    Image(systemName: "gearshape")
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Settings")
+            }
+            if let until = model.core.state.tamperNoticeUntil, model.core.now < until {
+                Text("Saved data was edited outside myTime, so balances were reset.")
+                    .foregroundStyle(.secondary)
+            }
             focusBlock
             if model.core.claimableSeconds >= Constants.minClaimable {
                 claimRow

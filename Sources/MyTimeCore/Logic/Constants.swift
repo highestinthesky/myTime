@@ -44,4 +44,5 @@ public enum Constants {
     public static let historyCap = 500
     public static let dailyRetentionDays = 60
     public static let bookingRetentionDays = 14
+    public static let weeklyRetentionWeeks = 10
 }

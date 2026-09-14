@@ -67,6 +67,29 @@ public enum DurationFormat {
         let day = dayLabel(date, now: now, timeZone: timeZone, locale: locale)
         return "\(day) \(timeOfDay(date, timeZone: timeZone, locale: locale))"
     }
+    public static func historyDay(
+        _ date: Date,
+        now: Date,
+        timeZone: TimeZone,
+        locale: Locale
+    ) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+        let today = calendar.startOfDay(for: now)
+        let target = calendar.startOfDay(for: date)
+        let offset = calendar.dateComponents([.day], from: today, to: target).day
+        if offset == 0 {
+            return "Today"
+        }
+        if offset == -1 {
+            return "Yesterday"
+        }
+        let formatter = DateFormatter()
+        formatter.locale = locale
+        formatter.timeZone = timeZone
+        formatter.setLocalizedDateFormatFromTemplate("EEEEMMMd")
+        return formatter.string(from: date)
+    }
     public static func setting(_ key: SettingKey, _ value: Int, locale: Locale) -> String {
         switch key.unit {
         case .seconds: return short(Double(value))

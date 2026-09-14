@@ -49,3 +49,14 @@ Run each step against scripts/build.sh --dev unless noted.
     - Panel → **Quit myTime…**: Start stays disabled until 15 characters; Cancel or closing the window during the 10 s wait keeps myTime running.
     - After the wait, **Quit myTime** → the menu bar item disappears, Discord opens with no gate, and myTime is not back after 30 s or after logging out and in.
     - Open myTime from Applications → the menu bar item returns with the same token count, and Discord is gated again.
+
+## Run 4
+
+20. **Loosening:** raise "Session time per week" → the "Settings updated" alert lists it under "Applies <time>" about a minute ahead, the panel shows "1 pending", the Pending tab lists it, and it applies. Lower it → "Applied now". Opening myTime from Applications while it runs opens Settings.
+21. **Day start:** change "Day starts at" → scheduled, never immediate.
+22. **Blocked apps:** add TextEdit → opening it shows the gate. Remove TextEdit → pending, still blocked until applied.
+23. **Clock tamper:** set the system time +2 h → no tokens gained, pending changes don't apply early, and Settings shows the clock-change note.
+24. **File tamper:** edit one character in `state-dev.json`, then kickstart the agent → tokens are 0 and the tamper banner shows.
+25. **Uninstall:** schedule uninstall → after ~1 minute myTime leaves the menu bar and is not relaunched, and `/Applications/myTime.app` is in the Trash.
+
+Then re-run steps 1–7 against a release build (`scripts/build.sh`).
