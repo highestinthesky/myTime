@@ -4,7 +4,6 @@ public enum Constants {
     public static let schemaVersion: Int = 1
     #if DEV_TIMESCALE
         public static let isDev = true
-        public static let launchGrace: TimeInterval = 15
         public static let extendWindow: TimeInterval = 10
         public static let focusCheckInterval: TimeInterval = 5
         public static let bookingHeadsUp: TimeInterval = 30
@@ -20,7 +19,6 @@ public enum Constants {
         public static let minClaimable: TimeInterval = 5
     #else
         public static let isDev = false
-        public static let launchGrace: TimeInterval = 15
         public static let extendWindow: TimeInterval = 10
         public static let focusCheckInterval: TimeInterval = 30
         public static let bookingHeadsUp: TimeInterval = 300

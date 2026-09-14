@@ -73,14 +73,14 @@ public struct EngineCore {
         state.grants.filter { $0.appID == appID && now < $0.expiresAt }.max { $0.expiresAt < $1.expiresAt }
     }
     public func remaining(of grant: AccessGrant) -> Double {
-        max(0, grant.expiresAt.timeIntervalSince(max(now, grant.startsAt)))
+        max(0, grant.expiresAt.timeIntervalSince(now))
     }
     public func isAllowed(appID: UUID) -> Bool {
         if activeGrant(appID: appID) != nil { return true }
         return activeBooking != nil && app(id: appID)?.modes.contains(.booked) == true
     }
 
-    public mutating func buyQuickLook(appID: UUID, tokens: Int, appLaunchDate: Date?) throws -> AccessGrant {
+    public mutating func buyQuickLook(appID: UUID, tokens: Int) throws -> AccessGrant {
         guard let app = app(id: appID) else { throw EngineError.unknownApp }
         guard app.modes.contains(.quickLook) else { throw EngineError.modeNotAllowed }
         guard state.focus == nil else { throw EngineError.focusActive }
@@ -93,12 +93,11 @@ public struct EngineCore {
             $0.tokensSpent += tokens
             $0.quickLooks += 1
         }
-        // Launch grace only applies when we know the app just launched; unknown launch date means no grace.
-        let startsAt = appLaunchDate.map { max(now, $0.addingTimeInterval(Constants.launchGrace)) } ?? now
+        // The countdown starts now: the gated app relaunches within about a second of buying.
         let duration = tokens * setting(.quickLookSecondsPerToken)
         let grant = AccessGrant(
-            appID: appID, kind: .quickLook, createdAt: now, startsAt: startsAt,
-            expiresAt: startsAt.addingTimeInterval(Double(duration)), tokensSpent: tokens)
+            appID: appID, kind: .quickLook, createdAt: now,
+            expiresAt: now.addingTimeInterval(Double(duration)), tokensSpent: tokens)
         state.grants.append(grant)
         record(.quickLook, "Quick look in \(app.name) · \(DurationFormat.clock(Double(duration))) · \(tokens) ◆")
         return grant

@@ -31,7 +31,7 @@ final class ModelTests: XCTestCase {
         s.grants = [
             AccessGrant(
                 appID: discord, kind: .reply, createdAt: date(2026, 9, 14, 10),
-                startsAt: date(2026, 9, 14, 10), expiresAt: date(2026, 9, 14, 10, 3),
+                expiresAt: date(2026, 9, 14, 10, 3),
                 tokensSpent: 2, note: "reply to Sam")
         ]
         s.pending = [

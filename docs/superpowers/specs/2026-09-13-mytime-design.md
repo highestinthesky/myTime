@@ -70,7 +70,7 @@ It is for one person, on one Mac (Apple Silicon), installed locally without a de
 | Self-declared focus + idle detection (not an app allowlist) | Allowlists break on legitimate browser and doc reading. The user works mostly on the Mac, and the claim flow covers some off-screen time. |
 | Vesting based on last-input timestamps | Accrual stays exact no matter how often the engine refreshes, which is what makes sparse (30 s) sampling safe. |
 | 5-second pause on the gate | The pause is what weakens impulse opens. The token price mostly sets the budget. |
-| 15 min → 1 token → 30 s; clock starts after launch grace; progress carries over within a day | The ratio suits impulse checks. Without launch grace, Discord's startup would eat the window. |
+| 15 min → 1 token → 30 s; the countdown starts when access is bought; progress carries over within a day | The ratio suits impulse checks. The app relaunches within about a second, and a countdown that waited for it read as broken (removed launch grace after Run 2 testing). |
 | **Tokens reset daily at 4:00 AM, no cap** | Resetting stops hoarding across days, which was the cap's only job. Dropping the cap removes the irritating "stop earning" state. A 4 AM boundary keeps late-night sessions intact. |
 | Tokens for impulses, weekly allowance for planned sessions | Planned calls and gaming aren't the habit being broken. Booking ≥ 10 min ahead prevents impulse use. Booking is allowed during focus. |
 | Reply mode with typed note and daily limit | Legitimate replies need more than 30 s. The note, limit, and history keep it from becoming a loophole. |
@@ -383,14 +383,13 @@ public struct AccessGrant: Codable, Equatable, Identifiable {
     public var appID: UUID
     public var kind: GrantKind
     public var createdAt: Date
-    public var startsAt: Date     // max(createdAt, appLaunchDate + launchGrace)
-    public var expiresAt: Date    // startsAt + duration (+ extensions)
+    public var expiresAt: Date    // createdAt + duration (+ extensions)
     public var tokensSpent: Int
     public var note: String?      // reply note or emergency reason
 }
 ```
 
-A grant is **active** while `now < expiresAt`. It allows the app even before `startsAt`. The remaining time shown is `expiresAt − max(now, startsAt)`.
+A grant is **active** while `now < expiresAt`. The remaining time shown is `expiresAt − now`.
 
 ### 4.4 Booking
 
@@ -560,13 +559,13 @@ public struct EngineCore {
     public mutating func dismissClaim()
 
     // Spending
-    public mutating func buyQuickLook(appID: UUID, tokens: Int, appLaunchDate: Date?) throws -> AccessGrant
-    public mutating func buyReply(appID: UUID, note: String, appLaunchDate: Date?) throws -> AccessGrant
+    public mutating func buyQuickLook(appID: UUID, tokens: Int) throws -> AccessGrant
+    public mutating func buyReply(appID: UUID, note: String) throws -> AccessGrant
     public func canExtend(grantID: UUID) -> Bool
     public mutating func extendGrant(grantID: UUID) throws
     public mutating func recordBackedOff(appID: UUID)
     public var emergencyUsesLeftThisWeek: Int { get }
-    public mutating func useEmergency(appID: UUID, reason: String, appLaunchDate: Date?) throws -> AccessGrant
+    public mutating func useEmergency(appID: UUID, reason: String) throws -> AccessGrant
 
     // Bookings
     public func validateBooking(start: Date, durationSeconds: Int) -> EngineError?
@@ -582,7 +581,7 @@ public struct EngineCore {
     // Enforcement queries
     public func isAllowed(appID: UUID) -> Bool
     public func activeGrant(appID: UUID) -> AccessGrant?
-    public func remaining(of grant: AccessGrant) -> Double   // max(0, expiresAt − max(now, startsAt))
+    public func remaining(of grant: AccessGrant) -> Double   // max(0, expiresAt − now)
     public func app(id: UUID) -> BlockedApp?
     public func app(bundleID: String) -> BlockedApp?
 
@@ -751,7 +750,7 @@ while progressSeconds >= P:
 
 ### 5.3 Tokens and grants
 
-Launch grace: `startsAt = appLaunchDate == nil ? now : max(now, appLaunchDate! + Constants.launchGrace /*15 s*/)`. Grace only applies when the launch time is known.
+Every grant starts counting when it's created: `expiresAt = now + duration`. There is no launch grace; the gated app relaunches within about a second.
 
 **buyQuickLook(appID, tokens n):** throws, in this order, if:
 - the app ID is not in the block list → `.unknownApp`
@@ -834,7 +833,7 @@ Then `extensionSeconds = bookingExtensionSeconds`. History: `"Extended session �
 
 - `emergencyUsesLeftThisWeek = max(0, emergencyPerWeek − weekly[weekKey(now)].emergencyUses)`.
 - The UI handles reason entry and the `emergencyWaitSeconds` countdown (§7.3). Cancelling during the wait does **not** use the pass.
-- **useEmergency(appID, reason, appLaunchDate):** `reason` is trimmed. Throws `.reasonTooShort` if `reason.count < Constants.minEmergencyReason /*15*/`, or `.emergencyUnavailable` if no uses are left.
+- **useEmergency(appID, reason):** `reason` is trimmed. Throws `.reasonTooShort` if `reason.count < Constants.minEmergencyReason /*15*/`, or `.emergencyUnavailable` if no uses are left.
   - Then: `emergencyUses += 1`; if focusing, `endFocus()`.
   - Create an `.emergency` grant with `duration = emergencyAccessSeconds`, `tokensSpent 0`, `note = reason`.
   - History: `"Emergency access to Discord — “<reason>”"`.
@@ -993,7 +992,7 @@ Add the pid to `terminationPending`, then call `process.terminate()`. After 5 s 
 | User action | Result |
 |---|---|
 | Never mind / Esc / 60 s of no interaction | Backed off, close the gate. |
-| Quick look / Reply succeeds | Buy with `appLaunchDate = now` (launch grace covers the relaunch), close the gate, relaunch the app with `NSWorkspace.shared.openApplication(at: bundleURL, configuration:)` (`activates = true`). The pill appears once the app is running. |
+| Quick look / Reply succeeds | Buy (the countdown starts now), close the gate, relaunch the app with `NSWorkspace.shared.openApplication(at: bundleURL, configuration:)` (`activates = true`). The pill appears once the app is running. |
 | Start Focus (0-token state) | Backed off, `core.startFocus()`, close the gate. |
 | Book a session… | Backed off, open the Booking window, close the gate. |
 | Emergency flow completes | Same as a successful quick look. |
@@ -1247,7 +1246,6 @@ Cases that carry values: `invalidAmount(max:)`, `bookingTooSoon(leadSeconds:)`, 
 
 | Name | Release | DEV |
 |---|---|---|
-| `launchGrace` | 15 s | 15 s |
 | `extendWindow` | 10 s | 10 s |
 | `focusCheckInterval` | 30 s | 5 s |
 | `bookingHeadsUp` | 300 s | 30 s |
@@ -1407,7 +1405,7 @@ Build `EngineCore` with fixed dates and feed synthetic `UpdateInput`s. Each run 
 **Grants**
 - Quick look cost/duration and all error cases.
 - Reply note trim/length, cost, daily limit.
-- `startsAt` honors launch grace.
+- The countdown starts at purchase (`remaining` equals the full duration right after buying).
 - Extension only within the last 10 s, and it consumes a token.
 - Emergency grants can't be extended.
 - Expiry emits `terminateIfNotAllowed`.
@@ -1465,7 +1463,7 @@ Each run appends its steps, run against `scripts/build.sh --dev`. Each step stat
 5. **Never mind:** Discord quits.
 6. **Quick look:**
    - Press "+1 token" twice, open Discord, wait 5 s, buy 2.
-   - Discord relaunches, and the pill and menu bar count down from 1:00 (after launch grace).
+   - Discord relaunches, and the pill and menu bar count down from 1:00 right away.
    - At ≤ 10 s (not later) the pill turns warm and offers +30 s. The pill can be dragged and reopens where it was left.
    - At 0, Discord quits within ~1 s.
 7. **Idle cost:** with nothing unlocked and the panel closed, watch Activity Monitor → Energy for 2 minutes → myTime shows 0.0 CPU and near-zero idle wake-ups.

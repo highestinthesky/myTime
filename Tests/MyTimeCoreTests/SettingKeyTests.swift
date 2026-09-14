@@ -39,7 +39,6 @@ final class SettingKeyTests: XCTestCase {
 
     func testReleaseConstants() {
         XCTAssertFalse(Constants.isDev)
-        XCTAssertEqual(Constants.launchGrace, 15)
         XCTAssertEqual(Constants.extendWindow, 10)
         XCTAssertEqual(Constants.focusCheckInterval, 30)
         XCTAssertEqual(Constants.bookingHeadsUp, 300)

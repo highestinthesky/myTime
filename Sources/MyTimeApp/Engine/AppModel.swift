@@ -144,7 +144,7 @@ import MyTimeCore
             guard let grant = core.activeGrant(appID: app.id) else { return nil }
             return GrantCountdown(
                 app: app, process: process, grant: grant,
-                remaining: max(0, grant.expiresAt.timeIntervalSince(max(displayNow, grant.startsAt))))
+                remaining: max(0, grant.expiresAt.timeIntervalSince(displayNow)))
         }
         return candidates.min { $0.remaining < $1.remaining }
     }

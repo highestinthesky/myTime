@@ -192,10 +192,9 @@ enum GateMode {
         guard let session else { return }
         session.touch()
         do {
-            // The app was quit when the gate opened; it relaunches now, so launch grace starts now.
-            let relaunchAt = model.displayNow
+            // The app was quit when the gate opened; it relaunches right after buying.
             _ = try model.perform {
-                try $0.buyQuickLook(appID: session.app.id, tokens: tokens, appLaunchDate: relaunchAt)
+                try $0.buyQuickLook(appID: session.app.id, tokens: tokens)
             }
             let bundleURL = session.bundleURL
             closeGate()

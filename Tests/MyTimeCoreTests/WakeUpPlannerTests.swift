@@ -19,7 +19,7 @@ final class WakeUpPlannerTests: XCTestCase {
         s.grants = [
             AccessGrant(
                 appID: s.settings.apps[0].id, kind: .quickLook, createdAt: now,
-                startsAt: now, expiresAt: now.addingTimeInterval(30))
+                expiresAt: now.addingTimeInterval(30))
         ]
         XCTAssertEqual(plan(s), WakeUp(date: now.addingTimeInterval(30), critical: true))
     }
@@ -74,7 +74,7 @@ final class WakeUpPlannerTests: XCTestCase {
         s.grants = [
             AccessGrant(
                 appID: s.settings.apps[0].id, kind: .quickLook, createdAt: now,
-                startsAt: now, expiresAt: now.addingTimeInterval(30))
+                expiresAt: now.addingTimeInterval(30))
         ]
         XCTAssertEqual(plan(s), WakeUp(date: now.addingTimeInterval(30), critical: true))
     }

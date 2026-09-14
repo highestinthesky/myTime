@@ -90,3 +90,9 @@ Checked: both builds and `swift test` (76 tests, 0 failures); the four plan test
 | Change | Why |
 |---|---|
 | Saves from the 1 s `.panel` and `.uiTick` refreshes are limited to once a minute (`RefreshReason.isUITick`); spec §3.5 step 7 updated. | During focus with the panel open, each 1 s refresh vests a second of focus, which rewrote the state file every second. Other refreshes (events, intents, the 30 s focus check) still save as soon as state changes, so at most a minute of credit is at risk on a crash. |
+
+### Follow-up fixes after the user tested Run 2
+
+| Problem | Cause | Fix |
+|---|---|---|
+| Countdown sat frozen for several seconds after a quick look (user report) | Launch grace: a grant bought at the gate started 15 s after purchase, so the pill showed a full countdown that didn't move while Discord was already on screen. System logs showed the relaunch itself works (Discord frontmost ~0.2 s after the click, main window at ~2 s). | Removed launch grace: `AccessGrant.startsAt`, the `appLaunchDate` parameter, and `Constants.launchGrace` are gone; grants expire `duration` after purchase. `GrantTests` replaces the two grace tests with `testCountdownStartsAtPurchase`. |

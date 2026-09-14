@@ -12,11 +12,10 @@ final class GrantTests: XCTestCase {
 
     func testQuickLookSpendsTokensAndCreatesGrant() throws {
         var (core, _) = engine(tokens: 5)
-        let g = try core.buyQuickLook(appID: discord, tokens: 2, appLaunchDate: nil)
+        let g = try core.buyQuickLook(appID: discord, tokens: 2)
         XCTAssertEqual(core.state.tokens, 3)
         XCTAssertEqual(g.kind, .quickLook)
         XCTAssertEqual(g.tokensSpent, 2)
-        XCTAssertEqual(g.startsAt, core.now)
         XCTAssertEqual(g.expiresAt, core.now.addingTimeInterval(60))
         XCTAssertEqual(core.today.tokensSpent, 2)
         XCTAssertEqual(core.today.quickLooks, 1)
@@ -25,24 +24,21 @@ final class GrantTests: XCTestCase {
         XCTAssertEqual(core.activeGrant(appID: discord)?.id, g.id)
     }
 
-    func testLaunchGraceDelaysStart() throws {
-        var (core, _) = engine(tokens: 5)
-        let g = try core.buyQuickLook(appID: discord, tokens: 1, appLaunchDate: core.now.addingTimeInterval(-5))
-        XCTAssertEqual(g.startsAt, core.now.addingTimeInterval(10))
-        XCTAssertEqual(g.expiresAt, core.now.addingTimeInterval(40))
+    /// No launch grace: the countdown starts the moment access is bought. The app relaunches within about a second,
+    /// and a frozen countdown read as broken (user feedback after Run 2).
+    func testCountdownStartsAtPurchase() throws {
+        var (core, sim) = engine(tokens: 5)
+        let g = try core.buyQuickLook(appID: discord, tokens: 1)
         XCTAssertEqual(core.remaining(of: g), 30, accuracy: 0.001)
-    }
-
-    func testAppLaunchedLongAgoStartsNow() throws {
-        var (core, _) = engine(tokens: 5)
-        let g = try core.buyQuickLook(appID: discord, tokens: 1, appLaunchDate: core.now.addingTimeInterval(-60))
-        XCTAssertEqual(g.startsAt, core.now)
+        sim.advance(10)
+        _ = core.update(sim.input)
+        XCTAssertEqual(core.remaining(of: g), 20, accuracy: 0.001)
     }
 
     func testQuickLookErrorsInOrder() {
         var (core, _) = engine(tokens: 1)
         func expect(_ error: EngineError, tokens: Int, app: UUID? = nil) {
-            XCTAssertThrowsError(try core.buyQuickLook(appID: app ?? discord, tokens: tokens, appLaunchDate: nil)) {
+            XCTAssertThrowsError(try core.buyQuickLook(appID: app ?? discord, tokens: tokens)) {
                 XCTAssertEqual($0 as? EngineError, error)
             }
         }
@@ -60,7 +56,7 @@ final class GrantTests: XCTestCase {
 
     func testExtendOnlyInLastTenSeconds() throws {
         var (core, sim) = engine(tokens: 3)
-        let g = try core.buyQuickLook(appID: discord, tokens: 1, appLaunchDate: nil)
+        let g = try core.buyQuickLook(appID: discord, tokens: 1)
         XCTAssertFalse(core.canExtend(grantID: g.id))
         XCTAssertThrowsError(try core.extendGrant(grantID: g.id)) { XCTAssertEqual($0 as? EngineError, .cannotExtend) }
         sim.advance(21)
@@ -78,7 +74,7 @@ final class GrantTests: XCTestCase {
 
     func testCannotExtendWithoutTokensOrForEmergency() throws {
         var (core, sim) = engine(tokens: 1)
-        let g = try core.buyQuickLook(appID: discord, tokens: 1, appLaunchDate: nil)
+        let g = try core.buyQuickLook(appID: discord, tokens: 1)
         sim.advance(25)
         _ = core.update(sim.input)
         XCTAssertFalse(core.canExtend(grantID: g.id))
@@ -90,7 +86,7 @@ final class GrantTests: XCTestCase {
 
     func testExpiryRemovesGrantAndAsksToTerminate() throws {
         var (core, sim) = engine(tokens: 1)
-        _ = try core.buyQuickLook(appID: discord, tokens: 1, appLaunchDate: nil)
+        _ = try core.buyQuickLook(appID: discord, tokens: 1)
         sim.advance(29)
         var r = core.update(sim.input)
         XCTAssertEqual(r.effects, [])
@@ -104,7 +100,7 @@ final class GrantTests: XCTestCase {
 
     func testManualClockJumpDoesNotShortenAccess() throws {
         var (core, sim) = engine(tokens: 1)
-        _ = try core.buyQuickLook(appID: discord, tokens: 1, appLaunchDate: nil)
+        _ = try core.buyQuickLook(appID: discord, tokens: 1)
         sim.wall = sim.wall.addingTimeInterval(3 * 3600)
         sim.continuous += 1
         sim.uptime += 1
