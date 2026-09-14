@@ -57,3 +57,36 @@ Verified independently: `swift build`, `swift build -Xswiftc -DDEV_TIMESCALE`, `
 | Overlay windows can't be moved | Borderless panels without `isMovableByWindowBackground` (verified `NSHostingView.mouseDownCanMoveWindow == true`, so enabling it is sufficient). | All overlays movable; the pill remembers its position (`mytime.pillOrigin`), the gate re-centers each time. |
 
 Note on the "gate closes by itself" hypothesis: instrumented logs showed every early close in testing was a real Esc key press or click while a test gate appeared on the user's screen; untouched gates always waited 60 s.
+
+## Run 2
+
+### Deviations
+
+None.
+
+### Not verified
+
+- The installed-app manual checks in `docs/MANUAL_TESTS.md` steps 8–15. Per the run instructions, no install script, LaunchAgent command, or manual UI workflow was run.
+- Visual behavior on a live menu bar and overlay panel, including the ring rendering, claim dot, hold gesture, focus-card placement, and focus-card-to-gate transition.
+
+### Commands run
+
+- `swift test --filter FocusAccrualTests` — failed as expected before Task 1 implementation because the focus API did not exist.
+- `swift test` and `swift build && swift test` — Task 1 passed 67 tests with 0 failures.
+- `swift test --filter ClaimTests` — failed as expected before Task 2 implementation because the claim API did not exist.
+- `swift test` — Task 2 passed 71 tests with 0 failures.
+- `swift test --filter "SleepAndLaunchTests|SamplingIndependenceTests"` — failed as expected before Task 3 implementation because the sleep/wake API did not exist.
+- `swift test` and `swift build && swift test` — Task 3 passed 76 tests with 0 failures.
+- `swift build && swift build -Xswiftc -DDEV_TIMESCALE && swift test` — Tasks 4 and 6 passed both builds and 76 tests with 0 failures.
+- `swift build && swift build -Xswiftc -DDEV_TIMESCALE` — Task 5 passed both builds.
+- `swift format --in-place --recursive Sources Tests` — completed successfully with the repository configuration.
+- `swift build && swift build -Xswiftc -DDEV_TIMESCALE && swift test && swift build -c release --arch arm64 -Xswiftc -DDEV_TIMESCALE` — all four final verification stages passed.
+- Final test summary: `Executed 76 tests, with 0 failures (0 unexpected) in 0.038 (0.042) seconds`.
+
+## Run 2 — reviewer notes (Claude)
+
+Checked: both builds and `swift test` (76 tests, 0 failures); the four plan test files are identical to the plan after formatting; no Run 1 test changed; no line over 130 characters; `FocusAccrual.swift` matches spec §5.2 branch by branch; overlay actions match §6.5–§6.6 and the plan's ordering; the gate's Start Focus is disabled during the pause, as §7.3 requires.
+
+| Change | Why |
+|---|---|
+| Saves from the 1 s `.panel` and `.uiTick` refreshes are limited to once a minute (`RefreshReason.isUITick`); spec §3.5 step 7 updated. | During focus with the panel open, each 1 s refresh vests a second of focus, which rewrote the state file every second. Other refreshes (events, intents, the 30 s focus check) still save as soon as state changes, so at most a minute of credit is at risk on a crash. |

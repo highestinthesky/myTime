@@ -5,15 +5,18 @@ public struct EngineRuntime: Equatable {
     public var blockedRunningAtLastUpdate: Bool
     public var awayStartUptime: Double?
     public var lastActiveBookingID: UUID?
+    public var sleepStartContinuous: Double?
     public init(
         unvestedSeconds: Double = 0, lastUptime: Double? = nil, blockedRunningAtLastUpdate: Bool = false,
-        awayStartUptime: Double? = nil, lastActiveBookingID: UUID? = nil
+        awayStartUptime: Double? = nil, lastActiveBookingID: UUID? = nil,
+        sleepStartContinuous: Double? = nil
     ) {
         self.unvestedSeconds = unvestedSeconds
         self.lastUptime = lastUptime
         self.blockedRunningAtLastUpdate = blockedRunningAtLastUpdate
         self.awayStartUptime = awayStartUptime
         self.lastActiveBookingID = lastActiveBookingID
+        self.sleepStartContinuous = sleepStartContinuous
     }
 }
 public struct UpdateInput {

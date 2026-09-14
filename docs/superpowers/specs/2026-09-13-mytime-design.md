@@ -302,7 +302,7 @@ let package = Package(
 4. Execute `result.effects` (§4.9).
 5. If the reason is `.appLaunched` or `.appActivated` for a blocked process, run `Enforcer.reconcile(process, trigger:)`. For `.appTerminated`, close any overlay owned by that pid.
 6. Update the activity assertion (§3.2) and the UI timers (§3.6).
-7. Save (atomic write) if anything other than `state.clock` changed since the last save, or if the saved clock is ≥ 60 s old. Updates run on every app switch, so saving clock-only changes every time would write to disk constantly. Also save immediately on `.willSleep` and `.willPowerOff`.
+7. Save (atomic write) if anything other than `state.clock` changed since the last save, or if the saved clock is ≥ 60 s old. Updates run on every app switch, so saving clock-only changes every time would write to disk constantly. The once-a-second `.panel` and `.uiTick` refreshes save only when the last save is ≥ 60 s old, because during focus each one credits another second. Also save immediately on `.willSleep` and `.willPowerOff`.
 8. `Scheduler.schedule(result.nextWakeUp)`. This replaces any pending timer. `critical` wake-ups use `tolerance = 1 s`; others use `5 s`. `nil` means no timer.
 
 ### 3.6 UI timers (exist only while their UI is visible)

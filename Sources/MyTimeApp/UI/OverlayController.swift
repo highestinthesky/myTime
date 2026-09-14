@@ -3,10 +3,16 @@ import MyTimeCore
 import Observation
 import SwiftUI
 
+enum GateMode {
+    case gate
+    case focusCard
+}
+
 /// State for one gate. The gated app has already been quit; the gate belongs to the app, not a process.
 @MainActor @Observable final class GateSession {
     let app: BlockedApp
     @ObservationIgnored let bundleURL: URL?
+    let mode: GateMode
     @ObservationIgnored let icon: NSImage
     let pauseEndsAt: Date
     let pauseSeconds: Double
@@ -15,9 +21,10 @@ import SwiftUI
     var quickLookTokens = 1
     var errorMessage: String?
 
-    init(app: BlockedApp, bundleURL: URL?, pauseEndsAt: Date) {
+    init(app: BlockedApp, bundleURL: URL?, mode: GateMode, pauseEndsAt: Date) {
         self.app = app
         self.bundleURL = bundleURL
+        self.mode = mode
         self.icon = NSWorkspace.shared.icon(forFile: bundleURL?.path ?? "")
         self.pauseEndsAt = pauseEndsAt
         self.pauseSeconds = max(0, pauseEndsAt.timeIntervalSinceNow)
@@ -54,19 +61,49 @@ import SwiftUI
     // MARK: Gate
 
     func showGate(app: BlockedApp, bundleURL: URL?) {
-        guard gateAppID != app.id else { return }
+        show(app: app, bundleURL: bundleURL, mode: .gate)
+    }
+
+    func showFocusCard(app: BlockedApp, bundleURL: URL?) {
+        show(app: app, bundleURL: bundleURL, mode: .focusCard)
+    }
+
+    private func show(app: BlockedApp, bundleURL: URL?, mode: GateMode) {
+        guard !(gateAppID == app.id && session?.mode == mode) else {
+            return
+        }
         closeGate()
         let session = GateSession(
-            app: app, bundleURL: bundleURL,
+            app: app,
+            bundleURL: bundleURL,
+            mode: mode,
             pauseEndsAt: Date().addingTimeInterval(Double(model.core.setting(.gatePauseSeconds))))
         self.session = session
 
         let panel = OverlayPanel(allowsKey: true)
-        panel.setRoot(
-            GateView(
-                session: session, model: model,
-                onNeverMind: { [weak self] in self?.neverMind() },
-                onQuickLook: { [weak self] count in self?.quickLook(count) }))
+        let actions = OverlayActions(
+            neverMind: { [weak self] in
+                self?.neverMind()
+            },
+            quickLook: { [weak self] count in
+                self?.quickLook(count)
+            },
+            startFocus: { [weak self] in
+                self?.startFocus()
+            },
+            backToWork: { [weak self] in
+                self?.backToWork()
+            },
+            endFocus: { [weak self] in
+                self?.endFocus()
+            }
+        )
+        switch mode {
+        case .gate:
+            panel.setRoot(GateView(session: session, model: model, actions: actions))
+        case .focusCard:
+            panel.setRoot(FocusCardView(session: session, model: model, actions: actions))
+        }
         let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
         if let frame = screen?.visibleFrame {
             panel.setFrameOrigin(
@@ -78,10 +115,29 @@ import SwiftUI
         panel.makeKey()
 
         gateClock.start(interval: 1) { [weak self] in
-            guard let self, let session = self.session else { return }
+            guard let self, let session = self.session else {
+                return
+            }
             session.now = Date()
-            if Date().timeIntervalSince(session.lastInteraction) >= Constants.gateTimeout { self.neverMind() }
+            if Date().timeIntervalSince(session.lastInteraction) >= Constants.gateTimeout {
+                switch session.mode {
+                case .gate:
+                    self.neverMind()
+                case .focusCard:
+                    self.backToWork()
+                }
+            }
         }
+    }
+
+    func syncGateMode() {
+        guard session?.mode == .gate, model.core.state.focus != nil, let session else {
+            return
+        }
+        let app = session.app
+        let bundleURL = session.bundleURL
+        closeGate()
+        showFocusCard(app: app, bundleURL: bundleURL)
     }
 
     func closeGate() {
@@ -92,9 +148,44 @@ import SwiftUI
     }
 
     private func neverMind() {
-        guard let session else { return }
+        guard let session else {
+            return
+        }
         model.perform { $0.recordBackedOff(appID: session.app.id) }
         closeGate()
+    }
+
+    private func startFocus() {
+        guard let session else {
+            return
+        }
+        let appID = session.app.id
+        closeGate()
+        model.perform { core in
+            core.recordBackedOff(appID: appID)
+            core.startFocus()
+        }
+    }
+
+    private func backToWork() {
+        guard let session else {
+            return
+        }
+        model.perform { core in
+            core.recordBackedOff(appID: session.app.id)
+        }
+        closeGate()
+    }
+
+    private func endFocus() {
+        guard let session else {
+            return
+        }
+        let app = session.app
+        let bundleURL = session.bundleURL
+        closeGate()
+        model.endFocus()
+        showGate(app: app, bundleURL: bundleURL)
     }
 
     private func quickLook(_ tokens: Int) {

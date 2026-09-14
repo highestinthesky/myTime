@@ -34,11 +34,14 @@ import MyTimeCore
             break
         case .terminate:
             terminate(process)
-        case .terminateAndShowGate, .terminateAndShowFocusCard:
-            // Run 1 has no focus sessions, so the focus card case can't occur yet; Run 2 gives it its own view.
+        case .terminateAndShowGate:
             let bundleURL = process.bundleURL
             terminate(process)
             model.overlays.showGate(app: app, bundleURL: bundleURL)
+        case .terminateAndShowFocusCard:
+            let bundleURL = process.bundleURL
+            terminate(process)
+            model.overlays.showFocusCard(app: app, bundleURL: bundleURL)
         }
     }
 

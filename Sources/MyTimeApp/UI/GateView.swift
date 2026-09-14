@@ -2,13 +2,21 @@ import AppKit
 import MyTimeCore
 import SwiftUI
 
+struct OverlayActions {
+    let neverMind: () -> Void
+    let quickLook: (Int) -> Void
+    let startFocus: () -> Void
+    let backToWork: () -> Void
+    let endFocus: () -> Void
+}
+
 /// The gate card shown when a blocked app is opened without access (spec §7.3, Run 1 subset).
 /// Layout is fixed-height so the panel can be sized once: the status and error lines always reserve their space.
+@MainActor
 struct GateView: View {
     @Bindable var session: GateSession
     let model: AppModel
-    let onNeverMind: () -> Void
-    let onQuickLook: (Int) -> Void
+    let actions: OverlayActions
 
     private var tokens: Int { model.core.state.tokens }
 
@@ -18,7 +26,8 @@ struct GateView: View {
             Text("Still want to open \(session.app.name)?")
                 .font(.title3.weight(.semibold))
             Text(
-                "\(tokenCount(tokens)) · 1 token = \(DurationFormat.short(Double(model.core.setting(.focusSecondsPerToken)))) of focus"
+                "\(tokenCount(tokens)) · 1 token = "
+                    + "\(DurationFormat.short(Double(model.core.setting(.focusSecondsPerToken)))) of focus"
             )
             .foregroundStyle(.secondary)
             Text(session.isPausing ? "Options unlock in \(session.pauseRemaining)s" : " ")
@@ -27,11 +36,19 @@ struct GateView: View {
 
             if session.app.modes.contains(.quickLook) {
                 if tokens == 0 {
-                    Text(
-                        "No tokens yet. Your next one is \(DurationFormat.short(model.core.secondsToNextToken)) of focus away."
-                    )
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
+                    VStack(spacing: 10) {
+                        Text(
+                            "No tokens yet. Your next one is "
+                                + "\(DurationFormat.short(model.core.secondsToNextToken)) of focus away."
+                        )
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        Button("Start Focus") {
+                            actions.startFocus()
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(session.isPausing)
+                    }
                 } else {
                     quickLookCard
                 }
@@ -43,7 +60,7 @@ struct GateView: View {
                 .frame(height: 20)
 
             Button {
-                onNeverMind()
+                actions.neverMind()
             } label: {
                 Text("Never mind").frame(maxWidth: .infinity)
             }
@@ -88,7 +105,7 @@ struct GateView: View {
                 .onChange(of: session.quickLookTokens) { session.touch() }
                 Spacer()
                 Button("Open for \(DurationFormat.clock(Double(count * perToken))) · \(count) ◆") {
-                    onQuickLook(count)
+                    actions.quickLook(count)
                 }
                 .disabled(session.isPausing)
             }

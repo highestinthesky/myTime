@@ -3,6 +3,15 @@ enum RefreshReason {
     case launch, appLaunched(NSRunningApplication), appActivated(NSRunningApplication), appTerminated(pid_t),
         screenLocked, screenUnlocked, willSleep, didWake, willPowerOff, clockChanged, wakeUp, intent, panel, uiTick
 }
+extension RefreshReason {
+    /// The once-a-second refreshes that run only while the panel or a grant countdown is on screen.
+    var isUITick: Bool {
+        switch self {
+        case .panel, .uiTick: return true
+        default: return false
+        }
+    }
+}
 @MainActor final class SystemEvents {
     private let handler: (RefreshReason) -> Void
     private var tokens: [(NotificationCenter, NSObjectProtocol)] = []

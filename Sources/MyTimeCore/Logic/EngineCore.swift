@@ -23,8 +23,7 @@ public struct EngineCore {
         if state.focus != nil && hadPrevious
             && now.timeIntervalSince1970 - previousTrusted > Double(setting(.idleThresholdSeconds))
         {
-            state.focus = nil
-            record(.focusEnded, "Focus ended · myTime wasn't running")
+            endFocusWithoutVesting("Focus ended · myTime wasn't running")
         }
         runtime = EngineRuntime()
         return update(input)
@@ -44,6 +43,10 @@ public struct EngineCore {
             runtime.unvestedSeconds = 0
             state.tokensDayKey = key
         }
+
+        // Step 4: focus accrual and away (spec §5.2)
+        accrueFocus(input)
+
         let expired = state.grants.filter { $0.expiresAt <= now }.map(\.appID)
         state.grants.removeAll { $0.expiresAt <= now }
         let effects = Array(Set(expired)).map { EngineEffect.terminateIfNotAllowed(appID: $0) }

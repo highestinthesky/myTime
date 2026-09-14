@@ -42,7 +42,16 @@ import MyTimeCore
         if case .screenLocked = reason { input.isLocked = true }
         if case .screenUnlocked = reason { input.isLocked = false }
         let result: UpdateResult
-        if case .launch = reason { result = core.start(input) } else { result = core.update(input) }
+        switch reason {
+        case .launch:
+            result = core.start(input)
+        case .willSleep:
+            result = core.handleWillSleep(input)
+        case .didWake:
+            result = core.handleDidWake(input)
+        default:
+            result = core.update(input)
+        }
         uiNow = Date()
         for effect in result.effects {
             if case let .terminateIfNotAllowed(id) = effect { enforcer.terminateIfNotAllowed(appID: id) }
@@ -59,9 +68,10 @@ import MyTimeCore
         case .willSleep: saveNow()
         default: break
         }
+        overlays.syncGateMode()
         overlays.updatePill()
         updateActivityAndTimers()
-        saveIfChanged()
+        saveIfChanged(throttled: reason.isUITick)
         scheduler.schedule(result.nextWakeUp, trustedNow: displayNow)
     }
     @discardableResult func perform<T>(_ intent: (inout EngineCore) throws -> T) rethrows -> T {
@@ -69,6 +79,26 @@ import MyTimeCore
         let result = try intent(&core)
         refresh(.intent)
         return result
+    }
+    func startFocus() {
+        perform { core in
+            core.startFocus()
+        }
+    }
+    func endFocus() {
+        perform { core in
+            core.endFocus()
+        }
+    }
+    func confirmClaim() {
+        perform { core in
+            core.confirmClaim()
+        }
+    }
+    func dismissClaim() {
+        perform { core in
+            core.dismissClaim()
+        }
     }
     func panelDidOpen() { panelTimer.start(interval: 1) { [weak self] in self?.refresh(.panel) } }
     func panelDidClose() { panelTimer.stop() }
@@ -80,13 +110,16 @@ import MyTimeCore
     }
     /// Every update refreshes the trusted-clock bookkeeping, and updates run on every app switch. Saving on clock-only
     /// changes would write to disk constantly, so those are saved at most once a minute (enough for the downtime
-    /// check in `EngineCore.start`, whose threshold is the 5-minute idle limit). Real changes save immediately.
-    private func saveIfChanged() {
+    /// check in `EngineCore.start`, whose threshold is the 5-minute idle limit). The once-a-second panel and countdown
+    /// refreshes (`throttled`) are held to the same limit, because during focus each one credits another second.
+    /// Everything else saves as soon as it changes.
+    private func saveIfChanged(throttled: Bool) {
         guard let lastSaved else { return saveNow() }
         var comparable = core.state
         comparable.clock = lastSaved.clock
-        let clockAge = core.state.clock.lastWall - lastSaved.clock.lastWall
-        if comparable != lastSaved || clockAge >= 60 { saveNow() }
+        let saveAge = core.state.clock.lastWall - lastSaved.clock.lastWall
+        let changed = comparable != lastSaved
+        if saveAge >= 60 || (changed && !throttled) { saveNow() }
     }
     private func updateActivityAndTimers() {
         if overlays.isGateVisible || !core.state.grants.isEmpty || core.activeBooking != nil {
@@ -114,6 +147,14 @@ import MyTimeCore
                 remaining: max(0, grant.expiresAt.timeIntervalSince(max(displayNow, grant.startsAt))))
         }
         return candidates.min { $0.remaining < $1.remaining }
+    }
+    var ringStep: Int {
+        let progress = core.state.progressSeconds + core.runtime.unvestedSeconds
+        let fraction = progress / Double(core.setting(.focusSecondsPerToken))
+        return max(0, min(12, Int((fraction * 12).rounded(.down))))
+    }
+    var showsClaimDot: Bool {
+        core.claimableSeconds >= Constants.minClaimable && grantCountdown == nil
     }
     #if DEV_TIMESCALE
         func devReset() {
