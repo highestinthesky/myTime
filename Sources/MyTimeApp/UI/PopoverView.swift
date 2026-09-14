@@ -13,6 +13,7 @@ struct PopoverView: View {
                 claimRow
             }
             tokensRow
+            SessionsBlock(model: model)
             todayStrip
             #if DEV_TIMESCALE
                 HStack {

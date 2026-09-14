@@ -10,6 +10,9 @@ struct MenuBarLabel: View {
             if let countdown = model.grantCountdown {
                 Image(systemName: "hourglass")
                 Text(prefix + DurationFormat.clock(countdown.remaining))
+            } else if let remaining = model.bookingCountdown {
+                Image(systemName: "hourglass")
+                Text(prefix + DurationFormat.short(remaining))
             } else if model.core.state.focus != nil && model.core.isAway {
                 Image(nsImage: MenuBarIcon.image(.pause, dot: model.showsClaimDot))
                 Text(prefix + "\(model.core.state.tokens)")

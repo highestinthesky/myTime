@@ -49,7 +49,12 @@ public struct EngineCore {
 
         let expired = state.grants.filter { $0.expiresAt <= now }.map(\.appID)
         state.grants.removeAll { $0.expiresAt <= now }
-        let effects = Array(Set(expired)).map { EngineEffect.terminateIfNotAllowed(appID: $0) }
+        var effects = Array(Set(expired)).map { EngineEffect.terminateIfNotAllowed(appID: $0) }
+
+        // Step 6: booking transitions (spec §5.4). A grant expiring as a session ends closes the app once.
+        for effect in applyBookingTransitions(input) where !effects.contains(effect) {
+            effects.append(effect)
+        }
         return UpdateResult(
             effects: effects,
             nextWakeUp: WakeUpPlanner.next(state: state, runtime: runtime, now: now, nextDayStart: nextDayStart))

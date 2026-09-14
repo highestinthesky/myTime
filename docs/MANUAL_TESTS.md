@@ -27,3 +27,19 @@ Run each step against scripts/build.sh --dev unless noted.
 13. **Shutdown:** Start Focus, restart the Mac → after login, focus is off and no time was credited for the restart.
 14. **Short sleep:** during focus, close the lid for 1 minute and reopen → focus is still on, and no away time is offered for the sleep.
 15. **Focus card:** during focus, open Discord → Discord quits with no window flashing and the "You're focusing" card appears. **End focus…** swaps to the gate with a fresh 5 s pause, and "Backed off" does **not** increase.
+
+## Run 3
+
+16. **Reply mode:**
+    - Typing in the gate's text field works while another app is in front.
+    - A note under 8 characters keeps Open disabled, with "Write at least 8 characters".
+    - A valid note → Discord relaunches and the pill shows the note.
+    - The 4th reply today is refused ("No replies left today").
+17. **Booking:**
+    - From the gate, "Book a session…" closes the gate and opens the Booking window in front. The day, start, and duration menus list valid choices only.
+    - Book a 1-minute session starting ~1 minute ahead. The panel lists it under Sessions with **Cancel**, and the gate shows "Next session: …".
+    - At the start, Discord opens freely with no gate and no pill, and the menu bar shows the hourglass.
+    - 30 s before the end, the heads-up shows for 8 s (below the pill if one is showing).
+    - At the end, Discord quits.
+    - Book another and never open Discord → the allowance is fully refunded.
+18. **Emergency:** from the gate, enter a 15+ character reason, wait 10 s (Cancel during the wait keeps the pass), open → 1 minute of access with an "Emergency" pill. The gate then shows "Emergency access used · resets Monday".

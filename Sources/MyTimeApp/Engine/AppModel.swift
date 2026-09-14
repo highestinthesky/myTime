@@ -13,7 +13,10 @@ import MyTimeCore
     @ObservationIgnored private var events: SystemEvents?
     @ObservationIgnored private(set) var enforcer: Enforcer!
     @ObservationIgnored private(set) var overlays: OverlayController!
+    @ObservationIgnored private(set) var router: WindowRouter!
+    @ObservationIgnored private(set) var headsUp: HeadsUpController!
     @ObservationIgnored private let countdownTimer = RepeatingUITimer()
+    @ObservationIgnored private let bookingLabelTimer = RepeatingUITimer()
     @ObservationIgnored private let panelTimer = RepeatingUITimer()
     @ObservationIgnored private var lastSaved: PersistedState?
     @ObservationIgnored private var activity: NSObjectProtocol?
@@ -26,6 +29,8 @@ import MyTimeCore
         self.lastSaved = loaded.outcome == .existing ? loaded.state : nil
         self.enforcer = Enforcer(model: self)
         self.overlays = OverlayController(model: self)
+        self.router = WindowRouter(model: self)
+        self.headsUp = HeadsUpController(model: self)
     }
     func launch() {
         Installer.selfHeal()
@@ -54,7 +59,14 @@ import MyTimeCore
         }
         uiNow = Date()
         for effect in result.effects {
-            if case let .terminateIfNotAllowed(id) = effect { enforcer.terminateIfNotAllowed(appID: id) }
+            switch effect {
+            case let .terminateIfNotAllowed(appID):
+                enforcer.terminateIfNotAllowed(appID: appID)
+            case let .bookingHeadsUp(bookingID):
+                headsUp.show(bookingID: bookingID)
+            case .uninstall:
+                break
+            }
         }
         switch reason {
         case .launch: enforcer.sweep()
@@ -100,6 +112,26 @@ import MyTimeCore
             core.dismissClaim()
         }
     }
+    func createBooking(start: Date, durationSeconds: Int) throws {
+        try perform { core in
+            _ = try core.createBooking(start: start, durationSeconds: durationSeconds)
+        }
+    }
+    func cancelBooking(id: UUID) {
+        perform { core in
+            try? core.cancelBooking(id: id)
+        }
+    }
+    func endBooking(id: UUID) {
+        perform { core in
+            core.endBooking(id: id)
+        }
+    }
+    func extendBooking(id: UUID) {
+        perform { core in
+            try? core.extendBooking(id: id)
+        }
+    }
     func panelDidOpen() { panelTimer.start(interval: 1) { [weak self] in self?.refresh(.panel) } }
     func panelDidClose() { panelTimer.stop() }
     func saveNow() {
@@ -138,6 +170,13 @@ import MyTimeCore
         } else {
             countdownTimer.start(interval: 1) { [weak self] in self?.refresh(.uiTick) }
         }
+        if grantCountdown == nil && bookingCountdown != nil {
+            bookingLabelTimer.start(interval: 60) { [weak self] in
+                self?.uiNow = Date()
+            }
+        } else {
+            bookingLabelTimer.stop()
+        }
     }
     var grantCountdown: GrantCountdown? {
         let candidates = monitor.runningBlocked(in: core).compactMap { app, process -> GrantCountdown? in
@@ -153,8 +192,22 @@ import MyTimeCore
         let fraction = progress / Double(core.setting(.focusSecondsPerToken))
         return max(0, min(12, Int((fraction * 12).rounded(.down))))
     }
+    var bookingCountdown: Double? {
+        guard let booking = core.activeBooking else {
+            return nil
+        }
+        let bookedAppIsRunning = monitor.runningBlocked(in: core).contains { app, _ in
+            app.modes.contains(.booked)
+        }
+        guard bookedAppIsRunning else {
+            return nil
+        }
+        return max(0, booking.end.timeIntervalSince(displayNow))
+    }
     var showsClaimDot: Bool {
-        core.claimableSeconds >= Constants.minClaimable && grantCountdown == nil
+        core.claimableSeconds >= Constants.minClaimable
+            && grantCountdown == nil
+            && bookingCountdown == nil
     }
     #if DEV_TIMESCALE
         func devReset() {

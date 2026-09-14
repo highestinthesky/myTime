@@ -5,53 +5,36 @@ import SwiftUI
 struct OverlayActions {
     let neverMind: () -> Void
     let quickLook: (Int) -> Void
+    let reply: (String) -> Void
+    let openEmergency: () -> Void
+    let bookSession: () -> Void
     let startFocus: () -> Void
     let backToWork: () -> Void
     let endFocus: () -> Void
 }
 
-/// The gate card shown when a blocked app is opened without access (spec §7.3, Run 1 subset).
-/// Layout is fixed-height so the panel can be sized once: the status and error lines always reserve their space.
+/// The gate card shown when a blocked app is opened without access (spec §7.3).
 @MainActor
 struct GateView: View {
     @Bindable var session: GateSession
     let model: AppModel
     let actions: OverlayActions
 
-    private var tokens: Int { model.core.state.tokens }
-
     var body: some View {
         VStack(spacing: 14) {
             iconWithPauseRing
             Text("Still want to open \(session.app.name)?")
                 .font(.title3.weight(.semibold))
-            Text(
-                "\(tokenCount(tokens)) · 1 token = "
-                    + "\(DurationFormat.short(Double(model.core.setting(.focusSecondsPerToken)))) of focus"
-            )
-            .foregroundStyle(.secondary)
+            Text(subtitle)
+                .foregroundStyle(.secondary)
             Text(session.isPausing ? "Options unlock in \(session.pauseRemaining)s" : " ")
                 .foregroundStyle(.secondary)
                 .frame(height: 20)
 
-            if session.app.modes.contains(.quickLook) {
-                if tokens == 0 {
-                    VStack(spacing: 10) {
-                        Text(
-                            "No tokens yet. Your next one is "
-                                + "\(DurationFormat.short(model.core.secondsToNextToken)) of focus away."
-                        )
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                        Button("Start Focus") {
-                            actions.startFocus()
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(session.isPausing)
-                    }
-                } else {
-                    quickLookCard
-                }
+            if session.step == .choose {
+                GateCards(session: session, model: model, actions: actions)
+            } else {
+                EmergencyFlowView(session: session, model: model, actions: actions)
             }
 
             Text(session.errorMessage ?? " ")
@@ -67,11 +50,44 @@ struct GateView: View {
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
             .keyboardShortcut(.cancelAction)
+
+            if session.step == .choose {
+                emergencyFooter
+            }
         }
         .padding(24)
         .frame(width: 420)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22))
-        .overlay(RoundedRectangle(cornerRadius: 22).strokeBorder(Color(nsColor: .separatorColor), lineWidth: 1))
+        .overlay(
+            RoundedRectangle(cornerRadius: 22)
+                .strokeBorder(Color(nsColor: .separatorColor), lineWidth: 1)
+        )
+    }
+
+    private var subtitle: String {
+        if session.app.modes == [.booked] {
+            return "\(session.app.name) is available during booked sessions."
+        }
+        let tokens = model.core.state.tokens
+        let tokenWord = tokens == 1 ? "token" : "tokens"
+        let focus = DurationFormat.short(Double(model.core.setting(.focusSecondsPerToken)))
+        return "\(tokens) \(tokenWord) · 1 token = \(focus) of focus"
+    }
+
+    private var emergencyFooter: some View {
+        Group {
+            if model.core.emergencyUsesLeftThisWeek > 0 {
+                Button("Emergency access") {
+                    session.step = .emergencyReason
+                    session.touch()
+                }
+                .buttonStyle(.link)
+                .disabled(session.isPausing)
+            } else {
+                Text("Emergency access used · resets Monday")
+                    .foregroundStyle(.tertiary)
+            }
+        }
     }
 
     private var iconWithPauseRing: some View {
@@ -87,32 +103,4 @@ struct GateView: View {
         }
         .frame(width: 84, height: 84)
     }
-
-    private var quickLookCard: some View {
-        let perToken = model.core.setting(.quickLookSecondsPerToken)
-        let maxTokens = min(model.core.setting(.quickLookMaxTokens), tokens)
-        let count = min(session.quickLookTokens, maxTokens)
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Quick look").font(.headline)
-                Spacer()
-                Text("\(perToken) s per token").foregroundStyle(.secondary)
-            }
-            HStack {
-                Stepper(value: $session.quickLookTokens, in: 1...maxTokens) {
-                    Text(tokenCount(count)).monospacedDigit()
-                }
-                .onChange(of: session.quickLookTokens) { session.touch() }
-                Spacer()
-                Button("Open for \(DurationFormat.clock(Double(count * perToken))) · \(count) ◆") {
-                    actions.quickLook(count)
-                }
-                .disabled(session.isPausing)
-            }
-        }
-        .padding(12)
-        .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 12))
-    }
-
-    private func tokenCount(_ n: Int) -> String { "\(n) \(n == 1 ? "token" : "tokens")" }
 }

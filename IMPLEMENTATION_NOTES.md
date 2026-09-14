@@ -96,3 +96,28 @@ Checked: both builds and `swift test` (76 tests, 0 failures); the four plan test
 | Problem | Cause | Fix |
 |---|---|---|
 | Countdown sat frozen for several seconds after a quick look (user report) | Launch grace: a grant bought at the gate started 15 s after purchase, so the pill showed a full countdown that didn't move while Discord was already on screen. System logs showed the relaunch itself works (Discord frontmost ~0.2 s after the click, main window at ~2 s). | Removed launch grace: `AccessGrant.startsAt`, the `appLaunchDate` parameter, and `Constants.launchGrace` are gone; grants expire `duration` after purchase. `GrantTests` replaces the two grace tests with `testCountdownStartsAtPurchase`. |
+
+## Run 3
+
+### Deviations
+
+- None in the delivered behavior or scope.
+- The Task 2 full-suite checkpoint reported 2 failures in `testChargedSecondsFollowWhatHappened` because `appOpened` is set by the booking transition explicitly assigned to Task 3. The tests were not changed; both passed after Task 3 added update step 6.
+
+### Not verified
+
+- The installed-app manual checks in `docs/MANUAL_TESTS.md` steps 16–18. Per the run instructions, no install script, LaunchAgent command, or manual UI workflow was run.
+- Live macOS UI behavior, including gate text entry while another app is active, booking-window placement and menus, automatic panel resizing during the emergency flow, heads-up placement and auto-hide, and booked-app termination at session end.
+
+### Commands run
+
+- `swift test --filter "ReplyTests|EmergencyTests"` — initially could not access the compiler cache in the restricted environment; rerun with cache access and failed with the expected missing-API compile errors.
+- `swift test` — Task 1 passed 84 tests with 0 failures.
+- `swift test --filter BookingRulesTests` — failed with the expected missing-API compile errors before Task 2 implementation.
+- `swift test` — after Task 2, executed 95 tests with 2 failures caused by the Task 3 `appOpened` transition not yet being present.
+- `swift test --filter "BookingTransitionTests|SessionTimeFormatTests"` — failed with the expected missing formatting APIs before Task 3 implementation.
+- `swift build && swift test` — Task 3 passed the build and 103 tests with 0 failures.
+- `swift build && swift build -Xswiftc -DDEV_TIMESCALE && swift test` — run after Tasks 4–5 and again after Task 6; both builds and all 103 tests passed each time.
+- `swift format --in-place --recursive Sources Tests` — completed successfully with the repository configuration.
+- Final `swift format --in-place --recursive Sources Tests && swift build && swift build -Xswiftc -DDEV_TIMESCALE && swift test && swift build -c release --arch arm64 -Xswiftc -DDEV_TIMESCALE` — formatting and all four verification stages passed.
+- Final test summary: `Executed 103 tests, with 0 failures (0 unexpected) in 0.072 (0.081) seconds`.

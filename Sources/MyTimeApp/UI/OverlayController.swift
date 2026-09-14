@@ -1,45 +1,6 @@
 import AppKit
 import MyTimeCore
-import Observation
 import SwiftUI
-
-enum GateMode {
-    case gate
-    case focusCard
-}
-
-/// State for one gate. The gated app has already been quit; the gate belongs to the app, not a process.
-@MainActor @Observable final class GateSession {
-    let app: BlockedApp
-    @ObservationIgnored let bundleURL: URL?
-    let mode: GateMode
-    @ObservationIgnored let icon: NSImage
-    let pauseEndsAt: Date
-    let pauseSeconds: Double
-    var now: Date
-    var lastInteraction: Date
-    var quickLookTokens = 1
-    var errorMessage: String?
-
-    init(app: BlockedApp, bundleURL: URL?, mode: GateMode, pauseEndsAt: Date) {
-        self.app = app
-        self.bundleURL = bundleURL
-        self.mode = mode
-        self.icon = NSWorkspace.shared.icon(forFile: bundleURL?.path ?? "")
-        self.pauseEndsAt = pauseEndsAt
-        self.pauseSeconds = max(0, pauseEndsAt.timeIntervalSinceNow)
-        self.now = Date()
-        self.lastInteraction = Date()
-    }
-
-    var isPausing: Bool { now < pauseEndsAt }
-    var pauseRemaining: Int { max(0, Int(ceil(pauseEndsAt.timeIntervalSince(now)))) }
-    /// 1 at the start of the pause, 0 when options unlock.
-    var pauseFraction: Double {
-        pauseSeconds > 0 ? min(1, max(0, pauseEndsAt.timeIntervalSince(now) / pauseSeconds)) : 0
-    }
-    func touch() { lastInteraction = Date() }
-}
 
 /// Presents the gate and the countdown pill (spec §6.4–§6.5, §7.3, §7.5).
 @MainActor final class OverlayController {
@@ -55,6 +16,7 @@ enum GateMode {
 
     var gateAppID: UUID? { session?.app.id }
     var isGateVisible: Bool { gatePanel != nil }
+    var pillFrame: NSRect? { pillPanel?.frame }
 
     init(model: AppModel) { self.model = model }
 
@@ -88,6 +50,15 @@ enum GateMode {
             quickLook: { [weak self] count in
                 self?.quickLook(count)
             },
+            reply: { [weak self] note in
+                self?.reply(note)
+            },
+            openEmergency: { [weak self] in
+                self?.openEmergency()
+            },
+            bookSession: { [weak self] in
+                self?.bookSession()
+            },
             startFocus: { [weak self] in
                 self?.startFocus()
             },
@@ -119,6 +90,12 @@ enum GateMode {
                 return
             }
             session.now = Date()
+            if case let .emergencyWaiting(until) = session.step {
+                session.touch()
+                if session.now >= until {
+                    session.step = .emergencyReady
+                }
+            }
             if Date().timeIntervalSince(session.lastInteraction) >= Constants.gateTimeout {
                 switch session.mode {
                 case .gate:
@@ -204,6 +181,56 @@ enum GateMode {
         } catch {
             session.errorMessage = nil
         }
+    }
+
+    private func reply(_ note: String) {
+        guard let session else {
+            return
+        }
+        session.touch()
+        do {
+            _ = try model.perform {
+                try $0.buyReply(appID: session.app.id, note: note)
+            }
+            let bundleURL = session.bundleURL
+            closeGate()
+            relaunch(bundleURL)
+        } catch let error as EngineError {
+            session.errorMessage = error.userMessage
+        } catch {
+            session.errorMessage = nil
+        }
+    }
+
+    private func openEmergency() {
+        guard let session else {
+            return
+        }
+        session.touch()
+        do {
+            _ = try model.perform {
+                try $0.useEmergency(appID: session.app.id, reason: session.emergencyReason)
+            }
+            let bundleURL = session.bundleURL
+            closeGate()
+            relaunch(bundleURL)
+        } catch let error as EngineError {
+            session.errorMessage = error.userMessage
+        } catch {
+            session.errorMessage = nil
+        }
+    }
+
+    private func bookSession() {
+        guard let session else {
+            return
+        }
+        let appID = session.app.id
+        closeGate()
+        model.perform { core in
+            core.recordBackedOff(appID: appID)
+        }
+        model.router.showBooking()
     }
 
     private func relaunch(_ bundleURL: URL?) {
