@@ -57,5 +57,5 @@ public struct UpdateResult: Equatable {
     }
 }
 public enum EngineEffect: Equatable {
-    case terminateIfNotAllowed(appID: UUID), bookingHeadsUp(bookingID: UUID), uninstall
+    case terminateIfNotAllowed(appID: UUID), bookingStarted(bookingID: UUID), bookingHeadsUp(bookingID: UUID), uninstall
 }

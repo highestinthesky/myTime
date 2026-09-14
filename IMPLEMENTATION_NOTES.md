@@ -121,3 +121,14 @@ Checked: both builds and `swift test` (76 tests, 0 failures); the four plan test
 - `swift format --in-place --recursive Sources Tests` — completed successfully with the repository configuration.
 - Final `swift format --in-place --recursive Sources Tests && swift build && swift build -Xswiftc -DDEV_TIMESCALE && swift test && swift build -c release --arch arm64 -Xswiftc -DDEV_TIMESCALE` — formatting and all four verification stages passed.
 - Final test summary: `Executed 103 tests, with 0 failures (0 unexpected) in 0.072 (0.081) seconds`.
+
+### Follow-up changes after the user tested Run 3 (Claude, spec revision 4)
+
+| Request | Change |
+|---|---|
+| See myTime in the Applications folder | `scripts/build.sh` installs to `/Applications/myTime.app` and removes the old `~/Applications` copy; `uninstall.sh` removes both. |
+| Be able to quit myTime, e.g. for a vacation | Panel → **Quit myTime…** opens a Quit window: 15+ character reason, `quitWait` (60 s, DEV 10 s), then **Quit myTime**. `core.quit(reason:)` ends focus and records history; `Installer.stopAgent()` removes the LaunchAgent plist and boots the job out, so myTime stays off until opened from Applications. `QuitTests` (2). |
+| No reminder when a session starts | New `.bookingStarted` effect when a booking becomes active (not again after a restart mid-session); WakeUpPlanner wakes at each upcoming start (critical). A "Your session has started" notice with **Open <App>** shows for 8 s. 2 new transition tests; 2 existing tests updated. Mutation checks: removing the effect or the restart guard fails the new tests. |
+| Giant "DEV" in the menu bar on the laptop screen | Removed the `DEV ` label prefix; the panel title reads "myTime · DEV" instead. |
+
+Verification: `swift build`, `swift build -Xswiftc -DDEV_TIMESCALE`, `swift test` → 107 tests, 0 failures.

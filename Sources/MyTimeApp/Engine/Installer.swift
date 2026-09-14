@@ -27,6 +27,13 @@ enum Installer {
         let args = NSDictionary(contentsOf: plistURL)?["ProgramArguments"] as? [String]
         if args?.first != exe { try? writePlist(executable: exe) }
     }
+    /// Removes the LaunchAgent, then stops it. Without the plist nothing restarts myTime,
+    /// not even a login, until it's opened again from Applications.
+    static func stopAgent() -> Never {
+        try? FileManager.default.removeItem(at: plistURL)
+        launchctl(["bootout", "\(domain)/\(label)"])
+        exit(0)
+    }
     private static func writePlist(executable: String) throws {
         let plist: [String: Any] = [
             "Label": label, "ProgramArguments": [executable, "--agent"], "RunAtLoad": true, "KeepAlive": true,

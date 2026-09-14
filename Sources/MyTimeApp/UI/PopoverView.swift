@@ -6,7 +6,7 @@ struct PopoverView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("myTime")
+            Text(Constants.isDev ? "myTime · DEV" : "myTime")
                 .font(.headline)
             focusBlock
             if model.core.claimableSeconds >= Constants.minClaimable {
@@ -23,6 +23,12 @@ struct PopoverView: View {
                     Button("Reset state") { model.devReset() }
                 }
             #endif
+            Button("Quit myTime…") {
+                model.router.showQuit()
+            }
+            .buttonStyle(.borderless)
+            .controlSize(.small)
+            .foregroundStyle(.secondary)
         }
         .padding(16)
         .frame(width: 320)

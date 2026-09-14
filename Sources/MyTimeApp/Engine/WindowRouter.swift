@@ -1,10 +1,11 @@
 import AppKit
 import SwiftUI
 
+/// Opens myTime's regular windows (Book a Session, Quit) in front, one of each at a time.
 @MainActor final class WindowRouter {
     unowned let model: AppModel
-    private var bookingWindow: NSWindow?
-    private var bookingCloseObserver: NSObjectProtocol?
+    private var windows: [String: NSWindow] = [:]
+    private var closeObservers: [String: NSObjectProtocol] = [:]
 
     init(model: AppModel) {
         self.model = model
@@ -12,8 +13,24 @@ import SwiftUI
 
     func showBooking() {
         model.refresh(.intent)
-        if let bookingWindow {
-            bringForward(bookingWindow)
+        show(title: "Book a Session") {
+            BookingView(model: model) { [weak self] in
+                self?.close("Book a Session")
+            }
+        }
+    }
+
+    func showQuit() {
+        show(title: "Quit myTime") {
+            QuitView(model: model) { [weak self] in
+                self?.close("Quit myTime")
+            }
+        }
+    }
+
+    private func show<Content: View>(title: String, content: () -> Content) {
+        if let window = windows[title] {
+            bringForward(window)
             return
         }
 
@@ -23,29 +40,25 @@ import SwiftUI
             backing: .buffered,
             defer: false
         )
-        window.title = "Book a Session"
+        window.title = title
         window.isReleasedWhenClosed = false
-        window.contentView = NSHostingView(
-            rootView: BookingView(model: model) { [weak self] in
-                self?.closeBooking()
-            }
-        )
+        window.contentView = NSHostingView(rootView: content())
         window.center()
-        bookingWindow = window
-        bookingCloseObserver = NotificationCenter.default.addObserver(
+        windows[title] = window
+        closeObservers[title] = NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification,
             object: window,
             queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated {
-                self?.clearBookingWindow()
+                self?.forget(title)
             }
         }
         bringForward(window)
     }
 
-    func closeBooking() {
-        bookingWindow?.close()
+    private func close(_ title: String) {
+        windows[title]?.close()
     }
 
     private func bringForward(_ window: NSWindow) {
@@ -54,11 +67,11 @@ import SwiftUI
         window.orderFrontRegardless()
     }
 
-    private func clearBookingWindow() {
-        if let bookingCloseObserver {
-            NotificationCenter.default.removeObserver(bookingCloseObserver)
+    private func forget(_ title: String) {
+        if let observer = closeObservers[title] {
+            NotificationCenter.default.removeObserver(observer)
         }
-        bookingCloseObserver = nil
-        bookingWindow = nil
+        closeObservers[title] = nil
+        windows[title] = nil
     }
 }

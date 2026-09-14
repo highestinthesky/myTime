@@ -10,11 +10,12 @@ import MyTimeCore
         self.model = model
     }
 
-    func show(bookingID: UUID) {
+    func show(_ kind: HeadsUpKind, bookingID: UUID) {
         let bookedAppIsRunning = model.monitor.runningBlocked(in: model.core).contains { app, _ in
             app.modes.contains(.booked)
         }
-        guard bookedAppIsRunning else {
+        // The start reminder always shows; the ending notice only matters while a booked app is open.
+        guard kind == .started || bookedAppIsRunning else {
             return
         }
         guard model.core.state.bookings.contains(where: { $0.id == bookingID }) else {
@@ -24,7 +25,7 @@ import MyTimeCore
 
         let panel = OverlayPanel(allowsKey: false)
         panel.setRoot(
-            HeadsUpView(model: model, bookingID: bookingID) { [weak self] in
+            HeadsUpView(model: model, kind: kind, bookingID: bookingID) { [weak self] in
                 self?.close()
             }
         )

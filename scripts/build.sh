@@ -16,8 +16,8 @@ cp Packaging/Info.plist "$APP/Contents/Info.plist"
 codesign --force --sign - "$APP"
 
 launchctl bootout "gui/$(id -u)/local.mytime.agent" 2>/dev/null || true
-mkdir -p "$HOME/Applications"
-rm -rf "$HOME/Applications/myTime.app"
-cp -R "$APP" "$HOME/Applications/myTime.app"
-"$HOME/Applications/myTime.app/Contents/MacOS/myTime"
+rm -rf "$HOME/Applications/myTime.app"   # older builds installed here
+rm -rf "/Applications/myTime.app"
+cp -R "$APP" "/Applications/myTime.app"
+"/Applications/myTime.app/Contents/MacOS/myTime"
 echo "myTime installed ($MODE)."

@@ -2,7 +2,7 @@ Run each step against scripts/build.sh --dev unless noted.
 
 ## Run 1
 
-1. **Install:** the menu bar shows `DEV ◆ 0`. `launchctl print gui/$(id -u)/local.mytime.agent` shows the job running.
+1. **Install:** the menu bar shows `◆ 0` and the panel title says "myTime · DEV". `launchctl print gui/$(id -u)/local.mytime.agent` shows the job running.
 2. **Keep-alive:** force quit myTime in Activity Monitor → it's back within ~5 s.
 3. **Startup sweep:** with Discord open, `launchctl kickstart -k gui/$(id -u)/local.mytime.agent` → Discord quits with no gate.
 4. **Gate, no tokens:** open Discord → it quits with no window flashing, the gate appears, options stay locked for 5 s, and "No tokens yet…" shows. Opening Discord again while the gate is up quits it quietly without a second gate. The gate can be dragged.
@@ -38,8 +38,14 @@ Run each step against scripts/build.sh --dev unless noted.
 17. **Booking:**
     - From the gate, "Book a session…" closes the gate and opens the Booking window in front. The day, start, and duration menus list valid choices only.
     - Book a 1-minute session starting ~1 minute ahead. The panel lists it under Sessions with **Cancel**, and the gate shows "Next session: …".
-    - At the start, Discord opens freely with no gate and no pill, and the menu bar shows the hourglass.
+    - At the start, the "Your session has started" reminder shows for 8 s even with Discord closed; **Open Discord** opens it.
+    - Discord opens freely with no gate and no pill, and the menu bar shows the hourglass.
     - 30 s before the end, the heads-up shows for 8 s (below the pill if one is showing).
     - At the end, Discord quits.
     - Book another and never open Discord → the allowance is fully refunded.
 18. **Emergency:** from the gate, enter a 15+ character reason, wait 10 s (Cancel during the wait keeps the pass), open → 1 minute of access with an "Emergency" pill. The gate then shows "Emergency access used · resets Monday".
+19. **Quit:**
+    - `/Applications/myTime.app` exists and shows in Finder's Applications folder.
+    - Panel → **Quit myTime…**: Start stays disabled until 15 characters; Cancel or closing the window during the 10 s wait keeps myTime running.
+    - After the wait, **Quit myTime** → the menu bar item disappears, Discord opens with no gate, and myTime is not back after 30 s or after logging out and in.
+    - Open myTime from Applications → the menu bar item returns with the same token count, and Discord is gated again.

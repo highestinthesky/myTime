@@ -26,6 +26,7 @@ public struct EngineCore {
             endFocusWithoutVesting("Focus ended · myTime wasn't running")
         }
         runtime = EngineRuntime()
+        runtime.lastActiveBookingID = activeBooking?.id
         return update(input)
     }
 

@@ -31,7 +31,7 @@ final class BookingTransitionTests: XCTestCase {
     func testHeadsUpIsEmittedOnceFiveMinutesBeforeTheEnd() throws {
         var (core, sim, booking, _, _) = try scenario()
         sim.advance(20 * 60)  // 10:20
-        XCTAssertEqual(core.update(sim.input).effects, [])
+        XCTAssertEqual(core.update(sim.input).effects, [.bookingStarted(bookingID: booking.id)])
         sim.advance(19 * 60 + 59)  // 10:39:59
         XCTAssertEqual(core.update(sim.input).effects, [])
         sim.advance(1)  // 10:40:00
@@ -39,6 +39,24 @@ final class BookingTransitionTests: XCTestCase {
         XCTAssertTrue(core.state.bookings[0].warned)
         sim.advance(30)
         XCTAssertEqual(core.update(sim.input).effects, [])
+    }
+
+    func testSessionStartIsAnnouncedOnce() throws {
+        var (core, sim, booking, _, _) = try scenario()
+        sim.advance(14 * 60 + 59)  // 10:14:59
+        XCTAssertEqual(core.update(sim.input).effects, [])
+        sim.advance(1)  // 10:15, the start
+        XCTAssertEqual(core.update(sim.input).effects, [.bookingStarted(bookingID: booking.id)])
+        sim.advance(60)
+        XCTAssertEqual(core.update(sim.input).effects, [])
+    }
+
+    func testRestartingDuringASessionDoesNotAnnounceItAgain() throws {
+        var (core, sim, _, _, _) = try scenario()
+        sim.advance(20 * 60)  // 10:20
+        _ = core.update(sim.input)
+        sim.advance(5)
+        XCTAssertEqual(core.start(sim.input).effects, [])
     }
 
     func testSessionEndClosesOnlyAppsWithSessionsOn() throws {

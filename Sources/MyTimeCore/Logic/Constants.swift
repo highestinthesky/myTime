@@ -15,6 +15,7 @@ public enum Constants {
         public static let forceQuitAfter: TimeInterval = 5
         public static let holdToConfirm: TimeInterval = 2
         public static let headsUpVisible: TimeInterval = 8
+        public static let quitWait: TimeInterval = 10
         public static let minAwayGap: TimeInterval = 10
         public static let minClaimable: TimeInterval = 5
     #else
@@ -30,6 +31,7 @@ public enum Constants {
         public static let forceQuitAfter: TimeInterval = 5
         public static let holdToConfirm: TimeInterval = 2
         public static let headsUpVisible: TimeInterval = 8
+        public static let quitWait: TimeInterval = 60
         public static let minAwayGap: TimeInterval = 120
         public static let minClaimable: TimeInterval = 60
     #endif
@@ -38,6 +40,7 @@ public enum Constants {
     public static let normalWakeTolerance: TimeInterval = 5
     public static let minReplyNote = 8
     public static let minEmergencyReason = 15
+    public static let minQuitReason = 15
     public static let historyCap = 500
     public static let dailyRetentionDays = 60
     public static let bookingRetentionDays = 14

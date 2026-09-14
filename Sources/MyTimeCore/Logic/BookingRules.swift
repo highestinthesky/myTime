@@ -4,6 +4,9 @@ extension EngineCore {
     mutating func applyBookingTransitions(_ input: UpdateInput) -> [EngineEffect] {
         var effects: [EngineEffect] = []
         if let activeIndex = state.bookings.firstIndex(where: { $0.isActive(at: now) }) {
+            if state.bookings[activeIndex].id != runtime.lastActiveBookingID {
+                effects.append(.bookingStarted(bookingID: state.bookings[activeIndex].id))
+            }
             let bookedAppIsRunning = input.runningAppIDs.contains { appID in
                 app(id: appID)?.modes.contains(.booked) == true
             }

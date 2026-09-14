@@ -48,9 +48,11 @@ final class WakeUpPlannerTests: XCTestCase {
         XCTAssertEqual(plan(s), WakeUp(date: now.addingTimeInterval(1800), critical: true))
     }
 
-    func testUpcomingBookingStartIsNotACandidate() {
+    func testUpcomingBookingStartIsACriticalCandidate() {
         var s = fresh
         s.bookings = [Booking(start: now.addingTimeInterval(600), durationSeconds: 1800, createdAt: now)]
+        XCTAssertEqual(plan(s), WakeUp(date: now.addingTimeInterval(600), critical: true))
+        s.bookings[0].canceledAt = now
         XCTAssertEqual(plan(s), WakeUp(date: dayStart, critical: false))
     }
 

@@ -3,6 +3,9 @@ public enum WakeUpPlanner {
     public static func next(state: PersistedState, runtime: EngineRuntime, now: Date, nextDayStart: Date) -> WakeUp? {
         var candidates: [(Date, Bool)] = [(nextDayStart, false)]
         candidates += state.grants.map { ($0.expiresAt, true) }
+        for booking in state.bookings where booking.isUpcoming(at: now) {
+            candidates.append((booking.start, true))
+        }
         for booking in state.bookings where booking.isActive(at: now) {
             candidates.append((booking.end, true))
             if !booking.warned { candidates.append((booking.end.addingTimeInterval(-Constants.bookingHeadsUp), false)) }

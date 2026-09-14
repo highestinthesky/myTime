@@ -62,8 +62,10 @@ import MyTimeCore
             switch effect {
             case let .terminateIfNotAllowed(appID):
                 enforcer.terminateIfNotAllowed(appID: appID)
+            case let .bookingStarted(bookingID):
+                headsUp.show(.started, bookingID: bookingID)
             case let .bookingHeadsUp(bookingID):
-                headsUp.show(bookingID: bookingID)
+                headsUp.show(.endingSoon, bookingID: bookingID)
             case .uninstall:
                 break
             }
@@ -131,6 +133,14 @@ import MyTimeCore
         perform { core in
             try? core.extendBooking(id: id)
         }
+    }
+    /// Quits for good after the Quit window's reason and wait (spec §5.10). Doesn't return.
+    func quit(reason: String) throws {
+        try perform { core in
+            try core.quit(reason: reason)
+        }
+        saveNow()
+        Installer.stopAgent()
     }
     func panelDidOpen() { panelTimer.start(interval: 1) { [weak self] in self?.refresh(.panel) } }
     func panelDidClose() { panelTimer.stop() }

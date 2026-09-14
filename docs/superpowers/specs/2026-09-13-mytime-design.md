@@ -1,6 +1,6 @@
 # myTime — Design Doc (v1)
 
-**Status:** Approved design, revision 3 · 2026-09-13
+**Status:** Approved design, revision 4 · 2026-09-14
 **Audience:** the implementing model (Codex) and the reviewer (Claude)
 
 **Revision 2 changes:**
@@ -15,6 +15,12 @@
 - quit-first enforcement: a blocked app without access is quit on sight and the gate belongs to the app (§5.8, §6)
 - no launch grace: a grant's countdown starts when it's bought (§5.3)
 - Run 3 details pinned down: reply and emergency error order, booking history lines, booking-window choices, session time labels, heads-up placement (§5.3–§5.5, §7)
+
+**Revision 4 changes** (from Run 3 user testing):
+- myTime installs to `/Applications`, so it shows in the Applications folder (§3, §10.2)
+- myTime can be quit, after a written reason and a 60-second wait, and stays off until it's opened again (§5.10, §7.11)
+- a reminder shows when a booked session starts (§5.4, §7.6)
+- no `DEV ` text in the menu bar; the panel title says "myTime · DEV" instead (§7.1, §7.2)
 
 ---
 
@@ -34,7 +40,7 @@ myTime is a macOS menu-bar app that makes distracting apps (Discord by default) 
 
 Opening a blocked app shows a **gate** with a mandatory 5-second pause. Getting past it costs tokens (quick look, reply mode), uses a pre-booked **session** from a weekly allowance, or uses a once-a-week **emergency pass**. When access ends, myTime quits the app.
 
-myTime runs all the time, restarts itself if quit, and delays any change that would make it less strict by 24 hours. It is quiet: it does no work unless something happens, and it never pops up over the user's work except when they try to open a blocked app.
+myTime runs all the time, restarts itself after a crash or force quit, can only be quit after a written reason and a wait, and delays any change that would make it less strict by 24 hours. It is quiet: it does no work unless something happens, and it never pops up over the user's work except when they try to open a blocked app.
 
 It is for one person, on one Mac (Apple Silicon), installed locally without a developer certificate. No accounts, no network, no cloud. The user shuts the Mac down most nights.
 
@@ -82,7 +88,7 @@ It is for one person, on one Mac (Apple Silicon), installed locally without a de
 | Weekly emergency pass | A blocker the user gets stuck in gets uninstalled. One hard, rare way out is safer. |
 | **Quiet UI** | No pop-ups over work except the gate. Away-time claims wait in the panel, marked by a dot on the menu bar icon. Booked sessions get one heads-up, not a floating timer. No ticking clock in the menu bar. |
 | Tighten now, loosen after 24 h | The user is both admin and target. The delay removes impulsive loosening. |
-| launchd LaunchAgent with KeepAlive, no Quit | Quitting myTime would otherwise unblock everything instantly. |
+| launchd LaunchAgent with KeepAlive; **Quit myTime…** needs a reason and a 60 s wait | An instant Quit would unblock everything on impulse, but the user needs a way to turn myTime off, e.g. for a vacation. The reason and the wait keep that deliberate. |
 | SwiftPM + shell script, no Xcode project | A generated `.pbxproj` is fragile for model-written code. SwiftPM is plain text and deterministic. |
 | Four runs, pure-logic core with tests, `AGENTS.md` | The user expects to keep editing the app. Small reviewed runs, rules isolated from UI, and written conventions keep later changes contained. |
 
@@ -111,7 +117,7 @@ It is for one person, on one Mac (Apple Silicon), installed locally without a de
 
 ### 3.2 Process model and installation
 
-One executable, `myTime`, inside `~/Applications/myTime.app`. Its behavior depends on the arguments:
+One executable, `myTime`, inside `/Applications/myTime.app` (so it shows in the Applications folder; admin accounts can write there without sudo). Its behavior depends on the arguments:
 
 | Invocation | Behavior |
 |---|---|
@@ -521,6 +527,7 @@ public struct UpdateResult: Equatable {
 
 public enum EngineEffect: Equatable {
     case terminateIfNotAllowed(appID: UUID)
+    case bookingStarted(bookingID: UUID)
     case bookingHeadsUp(bookingID: UUID)
     case uninstall
 }
@@ -531,6 +538,7 @@ AppModel handling:
 | Effect | Action |
 |---|---|
 | `terminateIfNotAllowed` | For each running process of that app: if `!core.isAllowed(appID)`, terminate it (§6.3). |
+| `bookingStarted` | Show the session-start reminder (§7.6). |
 | `bookingHeadsUp` | Show the heads-up panel (§7.6). |
 | `uninstall` | `Installer.uninstall()`. |
 
@@ -685,6 +693,7 @@ downtime = now.timeIntervalSince1970 - prevTrusted
 if state.focus != nil && hadPrevious && downtime > idleThresholdSeconds:
     end focus WITHOUT vesting; history(.focusEnded, "Focus ended · myTime wasn't running")
 runtime = EngineRuntime()
+runtime.lastActiveBookingID = activeBooking?.id   // a session already live before the restart isn't announced again
 return update(input)   // runs the daily reset, expiries, etc.
 ```
 
@@ -845,6 +854,7 @@ Then `extensionSeconds = bookingExtensionSeconds`. History (`.bookingExtended`):
 - `bookingDays()`: midnight of today and the next 6 days, keeping only days with at least one start slot.
 
 **Transitions** (update step 6):
+- If a booking is active and its id differs from `runtime.lastActiveBookingID`, emit `.bookingStarted`.
 - If a booking is active and `runningAppIDs` contains any app with `.booked`, set `appOpened = true`.
 - If a booking is active, `!warned`, and `end − now ≤ bookingHeadsUp`, set `warned = true` and emit `.bookingHeadsUp`.
 - If `runtime.lastActiveBookingID` is non-nil and that booking is no longer active, append history (`.bookingEnded`) `"Session ended"` and emit `.terminateIfNotAllowed` for every app with `.booked`.
@@ -967,13 +977,23 @@ The earliest of these candidates that is strictly after `now` (overdue items are
 | Candidate | Critical |
 |---|---|
 | `expiresAt` of each active grant | yes |
+| `start` of each upcoming booking | yes |
 | `end` of the active booking | yes |
 | `end − bookingHeadsUp` of the active booking, if `!warned` and in the future | no |
 | `applyAt` of each pending change | no |
 | `nextDayStart` | no |
 | `now + Constants.focusCheckInterval` if `state.focus != nil` or `runtime.awayStartUptime != nil` | no |
 
-Booking *starts* need no wake-up. Access is evaluated when an app is launched or activated, and every refresh updates `now` first.
+Booking starts wake the engine so the start reminder shows on time. Access itself is evaluated when an app is launched or activated, and every refresh updates `now` first.
+
+### 5.10 Quitting (Quit.swift)
+
+`quit(reason:) throws`:
+1. Trim the reason. Fewer than `Constants.minQuitReason` (15) characters → `reasonTooShort`.
+2. If focusing, `endFocus()` (vests as usual).
+3. Append history (`.quit`) `"Quit myTime — “<reason>”"`.
+
+The Quit window (§7.11) runs the `Constants.quitWait` countdown before calling it. Then AppModel saves and calls `Installer.stopAgent()`: remove the LaunchAgent plist, `launchctl bootout gui/<uid>/local.mytime.agent`, `exit(0)`. With the plist gone, nothing restarts myTime (not even a login) until the user opens it from Applications, which runs installer mode (§3) and starts the agent again. Tokens, sessions, and history are kept.
 
 ---
 
@@ -1066,7 +1086,7 @@ The label shows an icon plus optional text, with `monospacedDigit()`. Precedence
 
 **Claim dot:** when `claimableSeconds ≥ Constants.minClaimable` and the state is not one of the countdown rows, draw a small dot into the top-right of the icon image itself, with a clear halo so it never touches the glyph. It stays monochrome (template), like system menu bar indicators.
 
-DEV builds prefix the text with `DEV `.
+No `DEV ` prefix: on a display with a notch there is no room for it. DEV builds mark themselves in the panel title instead (§7.2).
 
 #### 7.1.1 MenuBarIcon
 
@@ -1078,7 +1098,7 @@ DEV builds prefix the text with `DEV `.
 
 `.onAppear` starts the 1 s panel refresh timer and `.onDisappear` stops it. Top to bottom, 16 pt padding, 16 pt spacing:
 
-1. **Header row:** "myTime" (headline). On the right, a gear button that opens Settings. If `pending.count > 0`, a small capsule `"<n> pending"` next to it opens Settings on the Pending tab.
+1. **Header row:** "myTime" (headline; "myTime · DEV" in DEV builds). On the right, a gear button that opens Settings. If `pending.count > 0`, a small capsule `"<n> pending"` next to it opens Settings on the Pending tab.
 2. **Tamper banner** (only if `now < tamperNoticeUntil`): "Saved data was edited outside myTime, so balances were reset." Secondary style.
 3. **Focus block:** FocusRing (160 pt diameter, 10 pt stroke), filled to `(progress + unvested) / P`.
 
@@ -1100,6 +1120,7 @@ DEV builds prefix the text with `DEV `.
    - Button **Book a Session…** opens the Booking window.
 7. **Today strip:** three equal columns: "Focus" / `short(today.focusSeconds)`, "Earned" / `tokensEarned`, "Backed off" / `backedOff`.
 8. **DEV only:** a row with "+1 token", "+5 min progress", "New day", "Reset state".
+9. **Quit myTime…** (small, borderless, secondary) opens the Quit window (§7.11).
 
 ### 7.3 Gate (OverlayPanel, key-capable, width 420, centered on the screen with the mouse)
 
@@ -1155,12 +1176,17 @@ Errors thrown by core intents appear as one secondary line under the relevant ca
 - **Last 10 s:** the text and icon tint cross-fade to the warm color (0.3 s). No pulsing or scaling. If `canExtend`, show a button **"+<quickLookSecondsPerToken> s · 1 ◆"**.
 - Hidden when no running blocked app has an active grant.
 
-### 7.6 Booking heads-up (OverlayPanel, non-activating, top-right like the pill, width 260)
+### 7.6 Session notices (OverlayPanel, non-activating, top-right like the pill, width 260)
 
-- Shown once per booking on the `bookingHeadsUp` effect, and only if a `.booked` app is running. Otherwise it is skipped.
+**Start reminder**, on the `bookingStarted` effect, always shown:
+- Title "Your session has started" (headline), then "Until `timeOfDay(end)`" (secondary).
+- Button **Open <App>** for the first app with `.booked` that isn't running and whose bundle ID resolves via `NSWorkspace.urlForApplication(withBundleIdentifier:)`. It opens the app and closes the notice. No button if there's no such app.
+
+**Heads-up**, on the `bookingHeadsUp` effect:
+- Shown once per booking, and only if a `.booked` app is running. Otherwise it is skipped.
 - Text: `"Session ends in <short(end − now)>"` (e.g. "Session ends in 5 min"). Button **Extend `short(bookingExtensionSeconds)`** if `canExtendBooking`, otherwise no button.
 - Placement: 12 pt inside the top-right of the main screen's `visibleFrame`, or 8 pt below the pill if the pill is showing.
-- Auto-hides after 8 s. Clicking outside does nothing.
+- Both notices use the same placement, auto-hide after 8 s, and clicking outside does nothing. A new notice replaces a visible one.
 
 ### 7.7 HoldButton and claim behavior
 
@@ -1240,6 +1266,14 @@ Cases that carry values: `invalidAmount(max:)`, `bookingTooSoon(leadSeconds:)`, 
 | `cannotCancel` | "That session has already started." |
 | `cannotExtendBooking` | "Can't extend this session." |
 
+### 7.11 Quit window (AppKit NSWindow via WindowRouter, "Quit myTime", width 360)
+
+- Title "Quit myTime?" (headline) and the secondary line "Blocked apps stay unlocked until you open myTime again from the Applications folder."
+- Text field "Why are you quitting?".
+- Buttons: **Cancel** (closes; always available) and **Start 60-second wait** (`Int(quitWait)`; enabled at 15+ trimmed characters).
+- During the wait the field is disabled and the button reads "Quit in <s>s" (disabled, updates every second). At 0 it becomes **Quit myTime**, which calls `model.quit(reason:)`.
+- Closing the window starts over: nothing is saved between openings.
+
 ---
 
 ## 8. Settings and constants reference
@@ -1285,6 +1319,7 @@ Cases that carry values: `invalidAmount(max:)`, `bookingTooSoon(leadSeconds:)`, 
 | `forceQuitAfter` | 5 s | 5 s |
 | `holdToConfirm` | 2 s | 2 s |
 | `headsUpVisible` | 8 s | 8 s |
+| `quitWait` | 60 s | 10 s |
 | `minAwayGap` | 120 s | 10 s |
 | `minClaimable` | 60 s | 5 s |
 | `clockJumpTolerance` | 120 s | 120 s |
@@ -1292,6 +1327,7 @@ Cases that carry values: `invalidAmount(max:)`, `bookingTooSoon(leadSeconds:)`, 
 | `normalWakeTolerance` | 5 s | 5 s |
 | `minReplyNote` | 8 chars | 8 chars |
 | `minEmergencyReason` | 15 chars | 15 chars |
+| `minQuitReason` | 15 chars | 15 chars |
 | `historyCap` | 500 events | 500 events |
 | `dailyRetentionDays` | 60 | 60 |
 | `bookingRetentionDays` | 14 | 14 |
@@ -1369,20 +1405,20 @@ cp Packaging/Info.plist "$APP/Contents/Info.plist"
 codesign --force --sign - "$APP"
 
 launchctl bootout "gui/$(id -u)/local.mytime.agent" 2>/dev/null || true
-mkdir -p "$HOME/Applications"
-rm -rf "$HOME/Applications/myTime.app"
-cp -R "$APP" "$HOME/Applications/myTime.app"
-"$HOME/Applications/myTime.app/Contents/MacOS/myTime"   # installer mode: installs + starts the agent
+rm -rf "$HOME/Applications/myTime.app"   # older builds installed here
+rm -rf "/Applications/myTime.app"
+cp -R "$APP" "/Applications/myTime.app"
+"/Applications/myTime.app/Contents/MacOS/myTime"   # installer mode: installs + starts the agent
 echo "myTime installed ($MODE)."
 ```
 
-`scripts/uninstall.sh`: `launchctl bootout gui/$(id -u)/local.mytime.agent || true`, then remove the plist and `~/Applications/myTime.app`. Leave Application Support in place. This is a deliberate developer escape hatch (§14).
+`scripts/uninstall.sh`: `launchctl bootout gui/$(id -u)/local.mytime.agent || true`, then remove the plist, `/Applications/myTime.app`, and any old `~/Applications/myTime.app`. Leave Application Support in place. This is a deliberate developer escape hatch (§14).
 
 ### 10.3 DEV builds (`#if DEV_TIMESCALE`)
 
 - DEV defaults and constants from §8.
 - Data file `state-dev.json` and sentinel `mytime.dev.initialized`.
-- `DEV ` prefix in the menu bar label.
+- "myTime · DEV" panel title (§7.2).
 - Panel debug row (§7.2):
   - "+1 token"
   - "+5 min progress" (via vest)
@@ -1525,19 +1561,25 @@ Each run appends its steps, run against `scripts/build.sh --dev`. Each step stat
 17. **Booking:**
     - From the gate, "Book a session…" closes the gate and opens the Booking window in front. The day, start, and duration menus list valid choices only.
     - Book a 1-minute session starting ~1 minute ahead. The panel lists it under Sessions with **Cancel**, and the gate shows "Next session: …".
-    - At the start, Discord opens freely with no gate and no pill, and the menu bar shows the hourglass.
+    - At the start, the "Your session has started" reminder shows for 8 s even with Discord closed; **Open Discord** opens it.
+    - Discord opens freely with no gate and no pill, and the menu bar shows the hourglass.
     - 30 s before the end, the heads-up shows for 8 s (below the pill if one is showing).
     - At the end, Discord quits.
     - Book another and never open Discord → the allowance is fully refunded.
 18. **Emergency:** from the gate, enter a 15+ character reason, wait 10 s (Cancel during the wait keeps the pass), open → 1 minute of access with an "Emergency" pill. The gate then shows "Emergency access used · resets Monday".
+19. **Quit:**
+    - `/Applications/myTime.app` exists and shows in Finder's Applications folder.
+    - Panel → **Quit myTime…**: Start stays disabled until 15 characters; Cancel or closing the window during the 10 s wait keeps myTime running.
+    - After the wait, **Quit myTime** → the menu bar item disappears, Discord opens with no gate, and myTime is not back after 30 s or after logging out and in.
+    - Open myTime from Applications → the menu bar item returns with the same token count, and Discord is gated again.
 
 **Run 4**
-19. **Loosening:** raise "Session time per week" → the alert says it applies in ~1 minute, the Pending tab lists it, and it applies. Lower it → applies immediately.
-20. **Day start:** change "Day starts at" → scheduled, never immediate.
-21. **Blocked apps:** add TextEdit → opening it shows the gate. Remove TextEdit → pending, still blocked until applied.
-22. **Clock tamper:** set the system time +2 h → no tokens gained, pending changes don't apply early, and Settings shows the clock-change note.
-23. **File tamper:** edit one character in `state-dev.json`, then kickstart the agent → tokens are 0 and the tamper banner shows.
-24. **Uninstall:** schedule uninstall → after ~1 minute myTime leaves the menu bar and is not relaunched, and `~/Applications/myTime.app` is in the Trash.
+20. **Loosening:** raise "Session time per week" → the alert says it applies in ~1 minute, the Pending tab lists it, and it applies. Lower it → applies immediately.
+21. **Day start:** change "Day starts at" → scheduled, never immediate.
+22. **Blocked apps:** add TextEdit → opening it shows the gate. Remove TextEdit → pending, still blocked until applied.
+23. **Clock tamper:** set the system time +2 h → no tokens gained, pending changes don't apply early, and Settings shows the clock-change note.
+24. **File tamper:** edit one character in `state-dev.json`, then kickstart the agent → tokens are 0 and the tamper banner shows.
+25. **Uninstall:** schedule uninstall → after ~1 minute myTime leaves the menu bar and is not relaunched, and `/Applications/myTime.app` is in the Trash.
 
 ---
 
@@ -1590,7 +1632,7 @@ After each run: `swift build` and `swift test` pass, `scripts/build.sh --dev` in
 
 **Tests:** grants/reply additions, BookingRules, booking transitions, Emergency, session time labels.
 
-**Manual:** steps 16–18.
+**Manual:** steps 16–19.
 
 ### Run 4 — Safety and management
 
@@ -1605,7 +1647,7 @@ After each run: `swift build` and `swift test` pass, `scripts/build.sh --dev` in
 
 **Tests:** SettingsPolicy.
 
-**Manual:** steps 19–24, then re-run steps 1–7 against a release build (`scripts/build.sh`).
+**Manual:** steps 20–25, then re-run steps 1–7 against a release build (`scripts/build.sh`).
 
 ---
 
@@ -1620,7 +1662,7 @@ After each run: `swift build` and `swift test` pass, `scripts/build.sh --dev` in
 7. **Do not use:** UserNotifications, AX/Accessibility APIs, AppleScript, Screen Recording, SMAppService, the network, App Sandbox, entitlements, or `NSAppSleepDisabled`.
 8. **Match blocked processes by exact bundle ID** and `.regular` activation policy.
 9. **Terminate politely first,** then force after 5 s.
-10. **No Quit menu item or command** anywhere. No "pause blocking" feature.
+10. **No instant Quit.** The only way to quit is the Quit window (§7.11), with its reason and wait. No "pause blocking" feature.
 11. **Never auto-renew** grants or bookings.
 12. Idle seconds: `CGEventSource.secondsSinceLastEventType(.hidSystemState, eventType: CGEventType(rawValue: ~0)!)` (hardware input only, so "mouse jiggler" apps don't count). Screen lock: `CGSessionCopyCurrentDictionary()` key `"CGSSessionScreenIsLocked"` present and true.
 13. **Persist** at the end of any refresh that changed state, and on `willPowerOff`, `willSleep`, and `applicationWillTerminate`. Always use atomic writes.
