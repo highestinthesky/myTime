@@ -1,6 +1,6 @@
 # myTime — Design Doc (v1)
 
-**Status:** Approved design, revision 4 · 2026-09-14
+**Status:** Approved design, revision 5 · 2026-09-14
 **Audience:** the implementing model (Codex) and the reviewer (Claude)
 
 **Revision 2 changes:**
@@ -21,6 +21,14 @@
 - myTime can be quit, after a written reason and a 60-second wait, and stays off until it's opened again (§5.10, §7.11)
 - a reminder shows when a booked session starts (§5.4, §7.6)
 - no `DEV ` text in the menu bar; the panel title says "myTime · DEV" instead (§7.1, §7.2)
+
+**Revision 5 changes** (Run 4 details pinned down):
+- `submit` and `summary` take a `Locale`; `SettingsPolicy.isLoosening` and `SettingsPolicy.addAppProblem` are public for the Settings window (§5, §5.6)
+- history kinds for each settings outcome, and `<date, time>` in copy means `sessionStart` (§5.6, §7.9)
+- applying a day-start change doesn't clear the current tokens; they last until the new day start (§5.6)
+- exact pruning cutoffs and `weeklyRetentionWeeks` (§8.2); `DurationFormat.historyDay` for the History tab (§7, §7.9)
+- the Settings window refreshes every second while open (§3.6); every submitted change re-checks running apps (§6.8)
+- uninstall trashes the app, then shuts down the same way Quit does (§3.2)
 
 ---
 
@@ -152,12 +160,11 @@ Result: myTime starts at login and is restarted by launchd within ~5 s after any
 
 **Reopen:** handle `applicationShouldHandleReopen` by opening the Settings window.
 
-**Uninstall** (only when a pending `.uninstall` change applies, §5.6):
-1. Set `isUninstalling = true` (stops self-heal) and save state.
-2. Delete the plist file.
-3. `FileManager.default.trashItem(at: <app bundle URL>)`; ignore errors.
-4. `/bin/launchctl bootout gui/<uid>/local.mytime.agent`. This terminates the process. Fallback: `exit(0)` after 2 s.
-5. Leave `~/Library/Application Support/myTime/` in place.
+**Uninstall** (`Installer.uninstall()`, only when a pending `.uninstall` change applies, §5.6):
+1. AppModel saves state first.
+2. `FileManager.default.trashItem(at: Bundle.main.bundleURL, resultingItemURL: nil)`; ignore errors.
+3. `Installer.stopAgent()` (§5.10): delete the plist, `launchctl bootout`, `exit(0)`. Self-heal can't rewrite the plist because the process ends here.
+4. Leave `~/Library/Application Support/myTime/` in place.
 
 **App Nap:** allowed by default. While anything time-critical is live (a gate or focus card is showing, a grant is active, or a booking is active), hold `ProcessInfo.processInfo.beginActivity(options: [.userInitiatedAllowingIdleSystemSleep], reason: "Enforcing app limits")`. End the activity as soon as none of those are true.
 
@@ -324,6 +331,7 @@ let package = Package(
 | Grant countdown (`refresh(.uiTick)`: pill, menu bar label, and `canExtend` all read current time) | 1 s | a running blocked app has an active grant |
 | Menu bar booking label | 60 s | a booking countdown is shown in the menu bar |
 | Panel refresh (`refresh(.panel)`) | 1 s | menu bar panel open |
+| Settings refresh (`refresh(.panel)`, so "Applies in" and applied changes stay current) | 1 s | Settings window open |
 | Heads-up auto-hide | one-shot 8 s | heads-up visible |
 
 All UI timers use `Timer` on `RunLoop.main` in `.common` mode, with `tolerance = 0.1 × interval`. For display, compute `displayNow = Date() + core.state.clock.offsetSeconds` without running an update.
@@ -603,7 +611,8 @@ public struct EngineCore {
     public func app(bundleID: String) -> BlockedApp?
 
     // Settings
-    public mutating func submit(_ change: SettingChange) -> SubmitResult
+    public mutating func submit(_ change: SettingChange, locale: Locale) -> SubmitResult
+    public func summary(of change: SettingChange, locale: Locale) -> String   // §5.6 summary against the current settings
     public mutating func cancelPending(id: UUID)
     public func setting(_ key: SettingKey) -> Int
     public var today: DailyStats { get }
@@ -871,7 +880,9 @@ Then `extensionSeconds = bookingExtensionSeconds`. History (`.bookingExtended`):
 
 ### 5.6 Settings and pending changes (SettingsPolicy)
 
-**isLoosening(change, settings):**
+`public enum SettingsPolicy` holds the two pure checks, `isLoosening(_:settings:)` and `addAppProblem(bundleID:path:ownBundleID:apps:)`. `submit`, `summary`, `cancelPending`, and apply-due are `EngineCore` methods.
+
+**isLoosening(change, settings)** (for `.setNumber`, compare the clamped value):
 
 | Change | Loosening when |
 |---|---|
@@ -881,23 +892,28 @@ Then `extensionSeconds = bookingExtensionSeconds`. History (`.bookingExtended`):
 | `.setMode(_, _, enabled)` | `enabled == true` and mode not currently enabled |
 | `.uninstall` | always |
 
-**submit(change):**
+**submit(change, locale):**
 
 ```
 clamp .setNumber values to the key's range (§8.1)
-remove pending items with the same fieldKey
-if change is a no-op (same number; mode already in that state; app already present by any bundle ID; removing a missing app):
+remove pending items with the same fieldKey (no history)
+if change is a no-op (same number; mode already in that state, or the app is missing; app already present by any bundle ID; removing a missing app):
     return .noChange
+summary = summary(of: change, locale)
 if isLoosening:
     append PendingChange(applyAt: now + setting(.looseningDelaySeconds), summary)
-    history(.changeScheduled, "Scheduled: <summary> · applies <date, time>")
+    history(.changeScheduled, "Scheduled: <summary> · applies <sessionStart(applyAt)>")
     return .scheduled(applyAt)
-apply(change); history(.changeApplied or .appAdded, "<summary>")
+apply(change)
+history(.appAdded for .addApp, otherwise .changeApplied, "<summary>")
 return .applied
 ```
 
+- **Applying `dayStartHour`** (now or when due) also sets `tokensDayKey = dayKey(now)` under the new hour, so the change itself doesn't clear tokens. The next reset happens at the new day start.
+- `Array.removeAll { … }` closures that read `now` while mutating `state` break Swift's exclusivity rule; copy `now` into a local first.
+
 - **Changing the loosening delay itself:** shortening it is loosening, so it waits out the *current* delay.
-- **Apply due** (update step 3): for pending items with `now ≥ applyAt`, in `applyAt` order, apply them and append history `"Applied: <summary>"`. For `.uninstall`, emit `.uninstall`. If the target app no longer exists, drop the item silently.
+- **Apply due** (update step 3): remove every pending item with `now ≥ applyAt`, then in `applyAt` order apply each one and append history `"Applied: <summary>"` (kind `.appRemoved` for `.removeApp`, otherwise `.changeApplied`). For `.uninstall`, emit `.uninstall`; it comes first in the update's effect list. If the target app no longer exists (`.removeApp`, `.setMode`), drop the item silently.
 - **cancelPending(id):** remove it and append history `"Canceled: <summary>"`. Cancelling is always immediate.
 
 **Summaries** (exact formats):
@@ -907,6 +923,13 @@ return .applied
 - `"Uninstall myTime"`
 
 Mode titles: quickLook → "Quick look", reply → "Reply mode", booked → "Sessions".
+
+**addAppProblem(bundleID, path, ownBundleID, apps) → String?**, checked in this order:
+1. `bundleID` nil or empty → "That app can't be blocked."
+2. equals `ownBundleID` → "myTime can't block itself."
+3. `path` starts with `/System/` → "System apps can't be blocked."
+4. an app in `apps` already has it → "<that app's name> is already blocked."
+5. otherwise `nil`.
 
 ### 5.7 Integrity and tamper handling
 
@@ -1055,7 +1078,7 @@ On agent launch, after `core.start`, call `reconcile(trigger: .startupSweep)` fo
 
 ### 6.8 Adding an app while it runs
 
-In Settings, if the chosen app is running, the confirmation says it will be closed. After the change applies, call `reconcile(trigger: .startupSweep)` for its processes.
+In Settings, if the chosen app is running, the confirmation says it will be closed. After **any** submitted change, AppModel runs `Enforcer.sweep()` (`reconcile(trigger: .startupSweep)` for every running blocked process), so an added app, or one that just lost a mode it was using, closes without a gate.
 
 ---
 
@@ -1069,7 +1092,8 @@ In Settings, if the chosen app is running, the confirmation says it will be clos
   - `setting(key, v)`: formats by the key's unit
   - `timeOfDay(date, timeZone, locale)`: locale time style, e.g. `"8:05 PM"`
   - `dayLabel(date, now, timeZone, locale)`: `"Today"`, `"Tomorrow"`, or the abbreviated weekday (`"Wed"`), by calendar day
-  - `sessionStart(date, now, timeZone, locale)`: `"<dayLabel> <timeOfDay>"`, e.g. `"Today 8:05 PM"`
+  - `sessionStart(date, now, timeZone, locale)`: `"<dayLabel> <timeOfDay>"`, e.g. `"Today 8:05 PM"`. Copy that says `<date, time>` uses this.
+  - `historyDay(date, now, timeZone, locale)`: `"Today"`, `"Yesterday"`, or the localized template `"EEEEMMMd"` (`"Thursday, Sep 10"`), by calendar day
 - **Token glyph:** `◆` (U+25C6). Pluralize "token"/"tokens".
 
 ### 7.1 Menu bar label (MenuBarLabel)
@@ -1212,6 +1236,8 @@ Header on every tab: "Changes that make myTime stricter apply right away. Change
 
 If `abs(clock.offsetSeconds) > 120`, also show: "Your Mac's clock was changed. myTime is ignoring the change (`short(abs(offset))`)."
 
+Open it with `WindowRouter.showSettings(tab:)` from the panel gear, the pending capsule (Pending tab), and `applicationShouldHandleReopen`. If it's already open, switch to the requested tab and bring it forward. While it's open, the 1 s Settings refresh runs (§3.6).
+
 **General tab**
 - A `Form` grouped by §8.1 "Group". Each row has the title and a `Stepper` with the formatted value.
 - The `dayStartHour` row shows the caption "Changing this always waits `short(looseningDelaySeconds)`."
@@ -1232,14 +1258,15 @@ If `abs(clock.offsetSeconds) > 120`, also show: "Your Mac's clock was changed. m
     - the path starts with `/System/` → "System apps can't be blocked."
     - it's already in the list → "<App> is already blocked."
   - If the app is running, confirm first: "<App> is running and will be closed." with **Add** and **Cancel**.
-  - A new entry defaults to `modes: [.quickLook, .reply, .booked]`. Adding is tightening, so it applies immediately.
+  - Check with `SettingsPolicy.addAppProblem(bundleID:path:ownBundleID: Bundle.main.bundleIdentifier, apps:)` and show its message.
+  - A new entry is `BlockedApp(name: url.deletingPathExtension().lastPathComponent, bundleIDs: [bundleID], modes: [.quickLook, .reply, .booked])`. Adding is tightening, so it applies immediately.
 
 **Pending tab**
 - List rows: summary, "Applies in `short(applyAt − now)`", **Cancel**. Empty state: "No pending changes."
 - At the bottom, a destructive-style button **Uninstall myTime…** with an alert: "myTime will uninstall itself in `short(looseningDelaySeconds)`. You can cancel it here until then." Buttons **Schedule** and **Cancel**.
 
 **History tab**
-- The last 7 days of `history`, newest first, grouped by day ("Today", "Yesterday", weekday + date), each row showing time and text.
+- The last 7 days of `history`, newest first, grouped by calendar day under `historyDay` headings, each row showing `timeOfDay` and the text.
 
 ### 7.10 Error copy (`EngineError.userMessage`)
 
@@ -1331,8 +1358,13 @@ Cases that carry values: `invalidAmount(max:)`, `bookingTooSoon(leadSeconds:)`, 
 | `historyCap` | 500 events | 500 events |
 | `dailyRetentionDays` | 60 | 60 |
 | `bookingRetentionDays` | 14 | 14 |
+| `weeklyRetentionWeeks` | 10 | 10 |
 
-**Pruning** (only in an update where the daily reset ran): drop `daily` entries older than 60 days, `weekly` entries older than 10 weeks, bookings that finished or were canceled more than 14 days ago, and history beyond the newest 500.
+**Pruning** (update step 7, only in an update where the daily reset ran). Keys compare as strings:
+- drop `daily` keys `< dayKey(now − dailyRetentionDays days)`
+- drop `weekly` keys `< weekKey(now − weeklyRetentionWeeks × 7 days)`
+- drop canceled bookings with `canceledAt < now − bookingRetentionDays days`, and finished bookings whose `endedAt ?? end` is before that
+- keep only the newest `historyCap` history events
 
 ---
 
@@ -1507,6 +1539,15 @@ Build `EngineCore` with fixed dates and feed synthetic `UpdateInput`s. Each run 
 - Add app immediate; remove app scheduled; mode on scheduled / off immediate.
 - Uninstall emits `.uninstall` when due.
 - Values clamped to range.
+- Applying a removal drops later changes for that app; canceling records history.
+- A day-start change keeps the current tokens until the new day start.
+- Add-app problems in order.
+
+**Pruning**
+- Runs only with the daily reset; cutoffs keep the boundary day and week; canceled and finished bookings by their end; history capped.
+
+**History labels**
+- `historyDay` gives Today / Yesterday / full weekday and date.
 
 **StateCodec**
 - Round trip.
@@ -1527,7 +1568,7 @@ Build `EngineCore` with fixed dates and feed synthetic `UpdateInput`s. Each run 
 Each run appends its steps, run against `scripts/build.sh --dev`. Each step states its expected result.
 
 **Run 1**
-1. **Install:** the menu bar shows `DEV ◆ 0`. `launchctl print gui/$(id -u)/local.mytime.agent` shows the job running.
+1. **Install:** the menu bar shows `◆ 0` and the panel title says "myTime · DEV". `launchctl print gui/$(id -u)/local.mytime.agent` shows the job running.
 2. **Keep-alive:** force quit myTime in Activity Monitor → it's back within ~5 s.
 3. **Startup sweep:** with Discord open, `launchctl kickstart -k gui/$(id -u)/local.mytime.agent` → Discord quits with no gate.
 4. **Gate, no tokens:** open Discord → it quits with no window flashing, the gate appears, options stay locked for 5 s, and "No tokens yet…" shows. Opening Discord again while the gate is up quits it quietly without a second gate. The gate can be dragged.
@@ -1574,7 +1615,7 @@ Each run appends its steps, run against `scripts/build.sh --dev`. Each step stat
     - Open myTime from Applications → the menu bar item returns with the same token count, and Discord is gated again.
 
 **Run 4**
-20. **Loosening:** raise "Session time per week" → the alert says it applies in ~1 minute, the Pending tab lists it, and it applies. Lower it → applies immediately.
+20. **Loosening:** raise "Session time per week" → the "Settings updated" alert lists it under "Applies <time>" about a minute ahead, the panel shows "1 pending", the Pending tab lists it, and it applies. Lower it → "Applied now". Opening myTime from Applications while it runs opens Settings.
 21. **Day start:** change "Day starts at" → scheduled, never immediate.
 22. **Blocked apps:** add TextEdit → opening it shows the gate. Remove TextEdit → pending, still blocked until applied.
 23. **Clock tamper:** set the system time +2 h → no tokens gained, pending changes don't apply early, and Settings shows the clock-change note.
