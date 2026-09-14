@@ -1,6 +1,6 @@
 # myTime — Design Doc (v1)
 
-**Status:** Approved design, revision 2 · 2026-09-13
+**Status:** Approved design, revision 3 · 2026-09-13
 **Audience:** the implementing model (Codex) and the reviewer (Claude)
 
 **Revision 2 changes:**
@@ -10,6 +10,11 @@
 - quieter UI: no claim pop-up, no pill during booked sessions, ring icon in the menu bar
 - handling for nightly shutdown
 - the build is split into four runs
+
+**Revision 3 changes** (from Run 1–2 review and user testing):
+- quit-first enforcement: a blocked app without access is quit on sight and the gate belongs to the app (§5.8, §6)
+- no launch grace: a grant's countdown starts when it's bought (§5.3)
+- Run 3 details pinned down: reply and emergency error order, booking history lines, booking-window choices, session time labels, heads-up placement (§5.3–§5.5, §7)
 
 ---
 
@@ -561,6 +566,7 @@ public struct EngineCore {
     // Spending
     public mutating func buyQuickLook(appID: UUID, tokens: Int) throws -> AccessGrant
     public mutating func buyReply(appID: UUID, note: String) throws -> AccessGrant
+    public func replyUnavailableReason(appID: UUID, note: String) -> EngineError?   // what buyReply would throw, or nil
     public func canExtend(grantID: UUID) -> Bool
     public mutating func extendGrant(grantID: UUID) throws
     public mutating func recordBackedOff(appID: UUID)
@@ -577,6 +583,9 @@ public struct EngineCore {
     public var activeBooking: Booking? { get }
     public var upcomingBookings: [Booking] { get }     // not canceled, start > now, sorted
     public func allowanceRemaining(weekOf date: Date) -> Int
+    public var bookingDurations: [Int] { get }          // booking window duration choices (§5.4)
+    public func bookingDays() -> [Date]                 // booking window day choices (§5.4)
+    public func bookingStartSlots(onDayOf day: Date) -> [Date]   // booking window start choices (§5.4)
 
     // Enforcement queries
     public func isAllowed(appID: UUID) -> Bool
@@ -613,6 +622,8 @@ Every mutation the user would care about appends a `HistoryEvent`.
 6. Booking transitions (§5.4)
 7. Pruning, only when the daily reset ran this update (§8.2)
 8. Next wake-up (§5.9)
+
+Effects from steps 5 and 6 are combined in that order, skipping any effect already in the list, so a grant that expires as a session ends closes the app once.
 
 ### 5.1 Time
 
@@ -761,14 +772,17 @@ Every grant starts counting when it's created: `expiresAt = now + duration`. The
 
 Otherwise: `tokens -= n`, `today.tokensSpent += n`, `today.quickLooks += 1`. Create a `.quickLook` grant with `duration = n × quickLookSecondsPerToken`. History: `"Quick look in Discord · 1:00 · 2 ◆"`.
 
-**buyReply(appID, note):** `note` is trimmed. Throws if:
+**buyReply(appID, note):** `note` is trimmed (whitespace and newlines). Throws, in this order, if:
+- the app ID is not in the block list → `.unknownApp`
 - the app lacks `.reply` → `.modeNotAllowed`
 - focus is active → `.focusActive`
 - `note.count < Constants.minReplyNote /*8*/` → `.noteTooShort`
 - `tokens < replyTokenCost` → `.notEnoughTokens`
 - `today.replies >= replyPerDay` → `.replyLimitReached`
 
-Otherwise: `tokens -= cost`, `today.tokensSpent += cost`, `today.replies += 1`. Create a `.reply` grant with `duration = replySeconds` and the note. History includes the note.
+Otherwise: `tokens -= cost`, `today.tokensSpent += cost`, `today.replies += 1`. Create a `.reply` grant with `duration = replySeconds`, `tokensSpent = cost`, and the trimmed note. History: `"Reply mode in Discord — “<note>”"`.
+
+**replyUnavailableReason(appID, note)** returns the error `buyReply` would throw, or `nil`, without changing anything. `buyReply` uses it, and the gate uses it to disable **Open** (§7.3).
 
 **Extensions:** `canExtend(grantID)` is true when the grant kind is `.quickLook` or `.reply`, the grant is active, `remaining ≤ Constants.extendWindow /*10 s*/`, and `tokens ≥ 1`. `extendGrant` checks this (throwing `.cannotExtend`), then `expiresAt += quickLookSecondsPerToken`, `tokens -= 1`, `today.tokensSpent += 1`. History: `"Extended Discord · +30 s"`. Emergency grants can't be extended. Nothing ever renews automatically.
 
@@ -811,9 +825,11 @@ A booking counts entirely against the week it **starts** in.
 
 Start times are not validated for alignment; the UI offers 5-minute slots. Booking is allowed during focus.
 
-**cancelBooking:** only if upcoming (otherwise `.cannotCancel`). Sets `canceledAt = now`.
+**createBooking:** throws `validateBooking`'s error if any. Otherwise appends `Booking(start, durationSeconds, createdAt: now)`. History (`.bookingCreated`): `"Booked a session · <short(duration)>"`.
 
-**endBooking:** if active, set `endedAt = now`. The follow-up update emits the terminate effects.
+**cancelBooking:** only if the booking exists and is upcoming (otherwise `.cannotCancel`). Sets `canceledAt = now`. History (`.bookingCanceled`): `"Canceled a session · <short(duration)>"`.
+
+**endBooking:** if the booking exists and is active, set `endedAt = now`; otherwise do nothing. It adds no history: the follow-up update records "Session ended" and emits the terminate effects.
 
 **canExtendBooking / extendBooking:** all of these must hold (otherwise `.cannotExtendBooking`):
 - the booking is active
@@ -821,19 +837,24 @@ Start times are not validated for alignment; the UI offers 5-minute slots. Booki
 - `allowanceRemaining(weekOf: start) ≥ bookingExtensionSeconds`
 - the new end does not overlap the next upcoming booking
 
-Then `extensionSeconds = bookingExtensionSeconds`. History: `"Extended session · +15 min"`.
+Then `extensionSeconds = bookingExtensionSeconds`. History (`.bookingExtended`): `"Extended session · +<short(bookingExtensionSeconds)>"`, e.g. `"Extended session · +15 min"`.
+
+**Booking window choices** (all in the engine's time zone, calendar days from midnight):
+- `bookingDurations`: `bookingMinSeconds` through `bookingMaxSeconds` in `bookingDurationStepSeconds` steps.
+- `bookingStartSlots(onDayOf:)`: times on that calendar day at multiples of `bookingStartStepSeconds` from midnight, from the first one ≥ `now + bookingLeadSeconds` up to the last one before the next midnight, keeping only those ≤ `now + bookingHorizonSeconds`. So every slot passes validation rules 1–2.
+- `bookingDays()`: midnight of today and the next 6 days, keeping only days with at least one start slot.
 
 **Transitions** (update step 6):
 - If a booking is active and `runningAppIDs` contains any app with `.booked`, set `appOpened = true`.
 - If a booking is active, `!warned`, and `end − now ≤ bookingHeadsUp`, set `warned = true` and emit `.bookingHeadsUp`.
-- If `runtime.lastActiveBookingID` is non-nil and that booking is no longer active, append history `"Session ended"` and emit `.terminateIfNotAllowed` for every app with `.booked`.
+- If `runtime.lastActiveBookingID` is non-nil and that booking is no longer active, append history (`.bookingEnded`) `"Session ended"` and emit `.terminateIfNotAllowed` for every app with `.booked`.
 - Finally, set `runtime.lastActiveBookingID = activeBooking?.id`.
 
 ### 5.5 Emergency pass
 
 - `emergencyUsesLeftThisWeek = max(0, emergencyPerWeek − weekly[weekKey(now)].emergencyUses)`.
 - The UI handles reason entry and the `emergencyWaitSeconds` countdown (§7.3). Cancelling during the wait does **not** use the pass.
-- **useEmergency(appID, reason):** `reason` is trimmed. Throws `.reasonTooShort` if `reason.count < Constants.minEmergencyReason /*15*/`, or `.emergencyUnavailable` if no uses are left.
+- **useEmergency(appID, reason):** `reason` is trimmed. Throws, in this order: `.unknownApp` if the app isn't blocked, `.reasonTooShort` if `reason.count < Constants.minEmergencyReason /*15*/`, `.emergencyUnavailable` if no uses are left. The pass works whatever modes the app has.
   - Then: `emergencyUses += 1`; if focusing, `endFocus()`.
   - Create an `.emergency` grant with `duration = emergencyAccessSeconds`, `tokensSpent 0`, `note = reason`.
   - History: `"Emergency access to Discord — “<reason>”"`.
@@ -1026,6 +1047,9 @@ In Settings, if the chosen app is running, the confirmation says it will be clos
   - `short(s)`: `"45 s"`, `"12 min"`, `"2h 10m"`
   - `hourOfDay(h)`: locale time style, e.g. `"4:00 AM"`
   - `setting(key, v)`: formats by the key's unit
+  - `timeOfDay(date, timeZone, locale)`: locale time style, e.g. `"8:05 PM"`
+  - `dayLabel(date, now, timeZone, locale)`: `"Today"`, `"Tomorrow"`, or the abbreviated weekday (`"Wed"`), by calendar day
+  - `sessionStart(date, now, timeZone, locale)`: `"<dayLabel> <timeOfDay>"`, e.g. `"Today 8:05 PM"`
 - **Token glyph:** `◆` (U+25C6). Pluralize "token"/"tokens".
 
 ### 7.1 Menu bar label (MenuBarLabel)
@@ -1071,8 +1095,8 @@ DEV builds prefix the text with `DEV `.
 5. **Tokens row:** `◆ <tokens> tokens`, with the secondary caption `"Resets at <hourOfDay(dayStartHour)>"` on the right.
 6. **Sessions block:**
    - Title "Sessions", with "`short(allowanceRemaining(thisWeek))` left this week" on the right.
-   - If a session is active: row "Live · `short(end − now)` left", with **Extend 15 min** (only if `canExtendBooking`) and **End**.
-   - Up to 3 upcoming rows: "`Today 8:05 PM` · `short(duration)`" with **Cancel**. Use "Today", "Tomorrow", or the abbreviated weekday.
+   - If a session is active: row "Live · `short(end − now)` left", with **Extend `short(bookingExtensionSeconds)`** (e.g. "Extend 15 min"; only if `canExtendBooking`) and **End**.
+   - Up to 3 upcoming rows: "`sessionStart(start)` · `short(duration)`" (e.g. "Today 8:05 PM · 1h") with **Cancel**.
    - Button **Book a Session…** opens the Booking window.
 7. **Today strip:** three equal columns: "Focus" / `short(today.focusSeconds)`, "Earned" / `tokensEarned`, "Backed off" / `backedOff`.
 8. **DEV only:** a row with "+1 token", "+5 min progress", "New day", "Reset state".
@@ -1095,21 +1119,23 @@ DEV builds prefix the text with `DEV `.
     - detail `"<replySeconds in min> min · <cost> ◆ · <left> of <perDay> left today"`
     - text field, placeholder "What are you here to do?"
     - button **"Open"**
-    - When disabled, one secondary line shows the first applicable reason: "Write at least 8 characters" / "Needs <cost> tokens" / "No replies left today".
+    - When disabled, one secondary line shows the reason from `replyUnavailableReason`: `.noteTooShort` → "Write at least 8 characters", `.notEnoughTokens` → "Needs <cost> tokens" ("token" when the cost is 1), `.replyLimitReached` → "No replies left today".
   - **If tokens == 0 and quick look or reply is enabled:** replace those cards with the text "No tokens yet. Your next one is `short(secondsToNextToken)` of focus away." and the button **Start Focus**.
   - **Sessions line** (if `.booked` is enabled):
-    - with an upcoming booking: "Next session: `Today 8:05 PM`"
+    - with an upcoming booking: "Next session: `sessionStart(start)`"
     - otherwise: "Sessions: none booked" plus a link-style button **Book a session…**
     - If `.booked` is the only mode, the subtitle becomes "<App> is available during booked sessions."
 - **Never mind:** full-width prominent button at the bottom, with `.keyboardShortcut(.cancelAction)` (Esc). Nothing in the gate is bound to Return.
-- **Footer link:**
+- **Footer link** (below Never mind; hidden while the emergency sub-flow is showing):
   - if `emergencyUsesLeftThisWeek > 0`: "Emergency access"
   - otherwise, disabled text: "Emergency access used · resets Monday"
 
 **Emergency sub-flow** (replaces the choose-phase content):
-1. Title "Emergency access", body "Once a week. After a <wait>-second wait you'll get <access in min> minutes." Text field placeholder "What's the emergency?" Buttons **Start wait** (enabled once the reason has ≥ 15 characters) and **Back**.
-2. Waiting: large `"Opening in <s>s"` and button **Cancel**, captioned "Your pass won't be used."
+1. Title "Emergency access", body "Once a week. After a <wait>-second wait you'll get <access in min> minutes." ("minute" when it's 1). Text field placeholder "What's the emergency?" Buttons **Start wait** (enabled once the trimmed reason has ≥ 15 characters) and **Back** (returns to the choose phase).
+2. Waiting: large `"Opening in <s>s"` and button **Cancel**, captioned "Your pass won't be used." Cancel returns to step 1 with the reason kept.
 3. Ready: button **"Open <App> for <access in min> min"**. This calls `useEmergency`; on success, same behavior as a quick look.
+
+**Never mind** is the only prominent button in the gate. The panel grows and shrinks with its content and keeps its top edge (NSHostingView does this by default; verified).
 
 Errors thrown by core intents appear as one secondary line under the relevant card, using `EngineError.userMessage`.
 
@@ -1132,7 +1158,8 @@ Errors thrown by core intents appear as one secondary line under the relevant ca
 ### 7.6 Booking heads-up (OverlayPanel, non-activating, top-right like the pill, width 260)
 
 - Shown once per booking on the `bookingHeadsUp` effect, and only if a `.booked` app is running. Otherwise it is skipped.
-- Text: "Session ends in 5 minutes". Button **Extend 15 min** if `canExtendBooking`, otherwise no button.
+- Text: `"Session ends in <short(end − now)>"` (e.g. "Session ends in 5 min"). Button **Extend `short(bookingExtensionSeconds)`** if `canExtendBooking`, otherwise no button.
+- Placement: 12 pt inside the top-right of the main screen's `visibleFrame`, or 8 pt below the pill if the pill is showing.
 - Auto-hides after 8 s. Clicking outside does nothing.
 
 ### 7.7 HoldButton and claim behavior
@@ -1145,9 +1172,10 @@ Errors thrown by core intents appear as one secondary line under the relevant ca
 
 ### 7.8 Booking window (AppKit NSWindow via WindowRouter, "Book a Session", ~380×300, not resizable)
 
-- **Day picker** (menu): Today, Tomorrow, then abbreviated weekday names up to 6 days out.
-- **Start picker** (menu): slots every `bookingStartStepSeconds` (5 min) for the chosen day, in locale time style, listing only slots that pass rules 1–2. In DEV builds, list only the next 30 valid slots.
-- **Duration picker** (menu): `bookingMinSeconds` … `bookingMaxSeconds` in `bookingDurationStepSeconds` steps, formatted with `short`.
+- Opening the window refreshes the engine first, so the choices use the current time.
+- **Day picker** (menu): `bookingDays()`, labeled with `dayLabel`. Defaults to the first.
+- **Start picker** (menu): `bookingStartSlots(onDayOf: day)`, labeled with `timeOfDay`. Defaults to the first slot, and resets to the first slot when the day changes. In DEV builds, list only the first 30.
+- **Duration picker** (menu): `bookingDurations`, formatted with `short`. Defaults to the first.
 - A line: `"<short(allowanceRemaining(weekOf: start))> left in that week"`.
 - A live validation line: `validateBooking(...)?.userMessage`.
 - Buttons: **Cancel** and **Book** (default, disabled while invalid). On success, close the window.
@@ -1420,12 +1448,19 @@ Build `EngineCore` with fixed dates and feed synthetic `UpdateInput`s. Each run 
 - Heads-up emitted once.
 - The end transition, including after `endBooking`, emits terminate effects.
 - Booking allowed during focus.
+- Canceled and ended sessions don't block new bookings.
+- Booking window choices: durations, start slots (aligned, lead time, end of day), and days with no slots left dropped.
+- A grant expiring as a session ends yields one terminate effect.
 
 **Emergency**
-- Weekly limit.
-- Reason length.
+- Weekly limit, whatever the app's modes.
+- Error order and reason length.
 - Ends focus.
 - The next week (Monday at `dayStartHour`) restores the pass.
+- Can't be extended.
+
+**Session time labels**
+- `dayLabel` gives Today / Tomorrow / weekday by calendar day; `timeOfDay` and `sessionStart` in `en_US`.
 
 **SettingsPolicy**
 - Direction per key, including `.anyChange` for `dayStartHour`.
@@ -1478,27 +1513,31 @@ Each run appends its steps, run against `scripts/build.sh --dev`. Each step stat
 11. **Focus card:** open Discord during focus → the focus card appears. **Back to work** quits Discord, and "Backed off" +1.
 12. **New day:** press "New day" → tokens and progress go to 0, and history records the reset.
 13. **Shutdown:** Start Focus, restart the Mac → after login, focus is off and no time was credited for the restart.
+14. **Short sleep:** during focus, close the lid for 1 minute and reopen → focus is still on, and no away time is offered for the sleep.
+15. **Focus card:** during focus, open Discord → Discord quits with no window flashing and the "You're focusing" card appears. **End focus…** swaps to the gate with a fresh 5 s pause, and "Backed off" does **not** increase.
 
 **Run 3**
-14. **Reply mode:**
-    - A note under 8 characters keeps Open disabled.
-    - A valid note → the pill shows it.
-    - The 4th reply today is refused.
-15. **Booking:**
-    - Book a 1-minute session starting ~1 minute ahead.
+16. **Reply mode:**
+    - Typing in the gate's text field works while another app is in front.
+    - A note under 8 characters keeps Open disabled, with "Write at least 8 characters".
+    - A valid note → Discord relaunches and the pill shows the note.
+    - The 4th reply today is refused ("No replies left today").
+17. **Booking:**
+    - From the gate, "Book a session…" closes the gate and opens the Booking window in front. The day, start, and duration menus list valid choices only.
+    - Book a 1-minute session starting ~1 minute ahead. The panel lists it under Sessions with **Cancel**, and the gate shows "Next session: …".
     - At the start, Discord opens freely with no gate and no pill, and the menu bar shows the hourglass.
-    - 30 s before the end, the heads-up shows for 8 s.
+    - 30 s before the end, the heads-up shows for 8 s (below the pill if one is showing).
     - At the end, Discord quits.
     - Book another and never open Discord → the allowance is fully refunded.
-16. **Emergency:** from the gate, enter a 15+ character reason, wait 10 s, open → 1 minute of access. The gate then shows "Emergency access used".
+18. **Emergency:** from the gate, enter a 15+ character reason, wait 10 s (Cancel during the wait keeps the pass), open → 1 minute of access with an "Emergency" pill. The gate then shows "Emergency access used · resets Monday".
 
 **Run 4**
-17. **Loosening:** raise "Session time per week" → the alert says it applies in ~1 minute, the Pending tab lists it, and it applies. Lower it → applies immediately.
-18. **Day start:** change "Day starts at" → scheduled, never immediate.
-19. **Blocked apps:** add TextEdit → opening it shows the gate. Remove TextEdit → pending, still blocked until applied.
-20. **Clock tamper:** set the system time +2 h → no tokens gained, pending changes don't apply early, and Settings shows the clock-change note.
-21. **File tamper:** edit one character in `state-dev.json`, then kickstart the agent → tokens are 0 and the tamper banner shows.
-22. **Uninstall:** schedule uninstall → after ~1 minute myTime leaves the menu bar and is not relaunched, and `~/Applications/myTime.app` is in the Trash.
+19. **Loosening:** raise "Session time per week" → the alert says it applies in ~1 minute, the Pending tab lists it, and it applies. Lower it → applies immediately.
+20. **Day start:** change "Day starts at" → scheduled, never immediate.
+21. **Blocked apps:** add TextEdit → opening it shows the gate. Remove TextEdit → pending, still blocked until applied.
+22. **Clock tamper:** set the system time +2 h → no tokens gained, pending changes don't apply early, and Settings shows the clock-change note.
+23. **File tamper:** edit one character in `state-dev.json`, then kickstart the agent → tokens are 0 and the tamper banner shows.
+24. **Uninstall:** schedule uninstall → after ~1 minute myTime leaves the menu bar and is not relaunched, and `~/Applications/myTime.app` is in the Trash.
 
 ---
 
@@ -1536,7 +1575,7 @@ After each run: `swift build` and `swift test` pass, `scripts/build.sh --dev` in
 
 **Tests:** FocusAccrual (including sampling independence), launch handling.
 
-**Manual:** steps 8–13.
+**Manual:** steps 8–15.
 
 ### Run 3 — Reply mode, sessions, emergency
 
@@ -1549,9 +1588,9 @@ After each run: `swift build` and `swift test` pass, `scripts/build.sh --dev` in
 - `HeadsUpView`
 - menu bar booking row
 
-**Tests:** grants/reply additions, BookingRules, Emergency.
+**Tests:** grants/reply additions, BookingRules, booking transitions, Emergency, session time labels.
 
-**Manual:** steps 14–16.
+**Manual:** steps 16–18.
 
 ### Run 4 — Safety and management
 
@@ -1566,7 +1605,7 @@ After each run: `swift build` and `swift test` pass, `scripts/build.sh --dev` in
 
 **Tests:** SettingsPolicy.
 
-**Manual:** steps 17–22, then re-run steps 1–7 against a release build (`scripts/build.sh`).
+**Manual:** steps 19–24, then re-run steps 1–7 against a release build (`scripts/build.sh`).
 
 ---
 
