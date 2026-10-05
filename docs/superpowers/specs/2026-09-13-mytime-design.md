@@ -1,7 +1,7 @@
 # myTime — Design Doc (v1)
 
-**Status:** Approved design, revision 6 · 2026-09-14
-**Audience:** the implementing model (Codex) and the reviewer (Claude)
+**Status:** Approved design, revision 7 · 2026-10-05. All four runs (§12) are built and reviewed; v1 is complete (0.1.0, 126 tests).
+**Audience:** the implementing model (Codex) and the reviewer (Claude). For later changes, update this document first (see `AGENTS.md`).
 
 **Revision 2 changes:**
 - tokens reset daily at 4:00 AM, and the token cap is removed
@@ -34,15 +34,18 @@
 - General settings are typed, not stepped: a whole number plus a seconds/minutes/hours menu, a number for counts, an hour menu for the day start. Settings have no step size any more (§7.9, §8.1)
 - setting values and summaries show exact durations (`DurationFormat.exact`), so "15 min 15 s" is never shown as "15 min" (§7)
 
+**Revision 7 changes** (documentation only, no behavior change):
+- status and workflow text now say v1 is complete; later changes follow the update-the-spec-first flow in `AGENTS.md` (§0, §12)
+
 ---
 
 ## 0. How to use this document
 
-- The app is built in **four runs** (§12). Each run gets a short brief naming the run number. **Build only that run's scope**, finish its checks, then stop.
+- The app was built in **four runs** (§12), all complete. For a new change, describe the behavior here first, bump the revision line, then change Core with tests, then the UI. During a run, **build only that run's scope**, finish its checks, then stop.
 - Read `AGENTS.md` (repo root) before starting. It holds the coding conventions and commands.
 - Where this doc gives exact values, names, strings, or rules, use them **verbatim**. Where it is silent, choose the simplest thing that satisfies the rules. **Do not add features** that are not described here (the only exception is the DEV debug controls in §10.3).
 - §13 lists hard rules and pitfalls. They are non-negotiable.
-- At the end of each run, append a section `## Run N` to `IMPLEMENTATION_NOTES.md` (repo root) listing: (a) every deviation from this doc and why, (b) anything you could not verify, (c) the commands you ran and their results. Do **not** commit; the reviewer commits after review.
+- At the end of each run or later change, append a section to `IMPLEMENTATION_NOTES.md` (repo root) listing: (a) every deviation from this doc and why, (b) anything you could not verify, (c) the commands you ran and their results. Do **not** commit; the reviewer commits after review.
 
 ---
 
@@ -1637,6 +1640,8 @@ Each run appends its steps, run against `scripts/build.sh --dev`. Each step stat
 ---
 
 ## 12. Runs (build in order; each run leaves a working app)
+
+**Status:** Runs 1–4 are complete and committed. Their plans in `docs/superpowers/plans/` are historical. The sections below record each run's scope.
 
 After each run: `swift build` and `swift test` pass, `scripts/build.sh --dev` installs, that run's manual steps pass, and `IMPLEMENTATION_NOTES.md` has a `## Run N` section. The reviewer then reviews, fixes, and commits before the next run starts. Later runs may extend earlier files; they must not rewrite working code without reason.
 

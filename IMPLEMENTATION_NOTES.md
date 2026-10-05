@@ -1,3 +1,11 @@
+# Implementation notes
+
+**Current state (2026-10-05):** v1 complete at spec revision 7. Runs 1–4 are built, reviewed, and committed, and `/Applications/myTime.app` matches the latest source. `swift build` and `swift test` pass (126 tests, 0 failures).
+
+**Still unchecked:** the Run 4 manual steps 20–25 and the release re-run of steps 1–7 in `docs/MANUAL_TESTS.md` have no recorded results. The DEV-build checks recorded under Run 1 are the only recorded manual results.
+
+Sections are chronological: for each run, the implementer's notes come first, then the reviewer's findings and the follow-ups from the user's testing.
+
 ## Run 1
 
 ### Deviations

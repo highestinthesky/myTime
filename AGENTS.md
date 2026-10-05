@@ -35,17 +35,22 @@ myTime is a macOS menu-bar app that gates distracting apps (Discord by default) 
 10. Don't add features, settings, or copy that aren't in the spec.
 11. Every behavior change from the spec — including storage locations and rule logic — goes in `IMPLEMENTATION_NOTES.md`, even if it seems minor.
 
-## Working in runs
+## Status
 
-- The app is built in the runs listed in spec §12. Build only the run you were given.
-- Each run has a task-by-task plan in `docs/superpowers/plans/`. Follow it in order; its tests are the contract.
-- Build on the Mac itself; a Linux sandbox can't compile AppKit. Only run `swift build` / `swift test`. Installing (`scripts/build.sh`) and the manual tests are the reviewer's job.
-- At the end of a run:
-  - `swift build` and `swift test` must pass.
-  - Append that run's steps to `docs/MANUAL_TESTS.md`.
-  - Append a `## Run N` section to `IMPLEMENTATION_NOTES.md` covering deviations, anything unverified, and the commands you ran with their results.
-- **Do not commit.** The reviewer reviews, fixes, and commits.
+v1 (0.1.0) is complete: Runs 1–4 are built, reviewed, and committed. `swift test` runs 126 tests. The run plans in `docs/superpowers/plans/` are historical.
+
+## Working on a change
+
+- Change one thing at a time and keep the spec accurate (see below).
+- Build on the Mac itself; a Linux sandbox can't compile AppKit. Only run `swift build` / `swift test` unless told otherwise. Installing (`scripts/build.sh`) and the manual tests are the reviewer's job.
+- Before finishing:
+  - `swift format --in-place --recursive Sources Tests`, then `swift build` and `swift test` must pass.
+  - Add the steps for any new behavior to `docs/MANUAL_TESTS.md`.
+  - Append a section to `IMPLEMENTATION_NOTES.md` covering deviations, anything unverified, and the commands you ran with their results.
+- **Do not commit** unless asked. The reviewer reviews, fixes, and commits.
 
 ## Changing the app later
 
-Update the spec first (describe the new behavior and bump the revision line), then change Core and its tests, then the UI. Keep `AGENTS.md` accurate if commands or conventions change.
+Update the spec first (describe the new behavior and bump the revision line), then change Core and its tests, then the UI. Keep `AGENTS.md` and `README.md` accurate if commands, conventions, or counts change.
+
+For a larger feature, write a plan in `docs/superpowers/plans/` and build it as a numbered run (Run 5 and on), following the plan in order; its tests are the contract.

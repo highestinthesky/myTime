@@ -1,5 +1,7 @@
 # myTime Run 2 — Earning — Implementation Plan
 
+> **Status: completed and committed.** Kept as a historical record of the run's scope and tests. The spec and `IMPLEMENTATION_NOTES.md` describe the current behavior, which later revisions changed in places.
+
 > **For the implementing agent (Codex):** Work through the tasks **in order**. Steps use checkbox (`- [ ]`) syntax. Read `AGENTS.md` first; its rules were tightened after Run 1 and are enforced in review. **Do not commit**; the reviewer commits.
 
 **Goal:** Tokens can be earned. The user starts a focus session; time before each keyboard/mouse input is credited; idle, a locked screen, or sleep pause crediting; away time can be claimed from the menu bar panel; opening a blocked app during focus shows a "You're focusing" card; the menu bar shows a filling ring while focusing.

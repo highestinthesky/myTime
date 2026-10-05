@@ -1,3 +1,7 @@
+# Manual tests
+
+Checks that need a real Mac and an installed build. Steps are numbered across runs; add new ones at the end. Results are recorded in `IMPLEMENTATION_NOTES.md` (only steps 1–7 have recorded results so far).
+
 Run each step against scripts/build.sh --dev unless noted.
 
 ## Run 1

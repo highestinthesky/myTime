@@ -1,5 +1,7 @@
 # myTime Run 3 — Reply Mode, Sessions, Emergency — Implementation Plan
 
+> **Status: completed and committed.** Kept as a historical record of the run's scope and tests. The spec and `IMPLEMENTATION_NOTES.md` describe the current behavior, which later revisions changed in places.
+
 > **For the implementing agent (Codex):** Work through the tasks **in order**. Steps use checkbox (`- [ ]`) syntax. Read `AGENTS.md` first. **Do not commit**; the reviewer commits.
 
 **Goal:** Three more ways past the gate. **Reply mode** spends tokens for a few minutes with a written purpose. **Booked sessions** come from a weekly allowance, are booked ahead in a Booking window, show a heads-up before they end, and close the app when they end. The **emergency pass** gives once-a-week access after a reason and a wait.

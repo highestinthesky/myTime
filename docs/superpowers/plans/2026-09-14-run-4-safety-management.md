@@ -1,5 +1,7 @@
 # myTime Run 4 — Safety and Management — Implementation Plan
 
+> **Status: completed and committed.** Kept as a historical record of the run's scope and tests. The spec and `IMPLEMENTATION_NOTES.md` describe the current behavior, which later revisions changed in places.
+
 > **For the implementing agent (Codex):** Work through the tasks **in order**. Steps use checkbox (`- [ ]`) syntax. Read `AGENTS.md` first. **Do not commit**; the reviewer commits.
 
 **Goal:** Make myTime manageable without weakening it:
