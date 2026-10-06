@@ -17,7 +17,7 @@
 
 | Run | Scope | Needs paid Apple account | Est. (vibe-coded) |
 |---|---|---|---|
-| 5 | Spec revision + iPhone enforcement spike | Likely yes (**to verify**) | 3–6 days |
+| 5 | Spec revision + iPhone enforcement spike | Yes (believed; **to verify** in Xcode) | 3–6 days |
 | 6 | Ledger + merge rules in Core, fault-injection tests | No | 4–6 days |
 | 7 | Mac integrates the ledger; two-instance DEV test over a file transport | No | 3–5 days |
 | 8 | iPhone app, Screen Time extensions, App Group state | Yes | 2–3 weeks |
@@ -36,11 +36,11 @@ Total is roughly **6–10 weeks** of focused work. Device testing and Apple's Fa
 
 | # | Decision | Needed by | Recommendation |
 |---|---|---|---|
-| D1 | **Decided: shortest shared unlock window is 2 minutes.** Mac quick looks are 30 s per token today, so the shared economy needs a 2-minute minimum (e.g. 1 token = 2 min); the spec revision must change this. | Run 5 | Run 5 passes only if iPhone re-locks at 2 min within the lateness tolerance set in Task 5.1. If it can't, raise the shared minimum for both devices rather than letting expiries differ. |
-| D2 | Who credits focus when a session is started on one device and the user works on the other? | Run 6 | Each device reports vested **intervals**; credit is the union of intervals, so overlap can't double count. Mac vests with its idle detection; iPhone reports only while its own client confirms the session is running. |
+| D1 | **Decided: shortest shared unlock window is 2 minutes.** Mac quick looks are 30 s per token today, so the shared economy needs a 2-minute minimum (e.g. 1 token = 2 min); the spec revision must change this. **Decided price: 1 token = 2 min; the earn rate stays 15 min of focus per token for now (access becomes more generous; tune in the beta).** | Run 5 | Run 5 passes only if iPhone re-locks at 2 min within the lateness tolerance set in Task 5.1. If it can't, raise the shared minimum for both devices rather than letting expiries differ. |
+| D2 | **Decided: union of intervals.** Who credits focus when a session is started on one device and the user works on the other? Either device can start or stop the session whenever both can reach the backend. | Run 6 | Each device reports vested **intervals**; credit is the union of intervals, so overlap can't double count. Mac vests with its idle detection; iPhone reports only while its own client confirms the session is running. |
 | D3 | **Decided: no debt.** Offline double-spend policy. | Run 6 | Allow offline spending from the last-synced balance. On merge, if total spending exceeds earnings, the **latest purchase by `HybridStamp` is voided and refunded**, so the balance never goes negative. If that purchase was the only one backing a grant, the unlock ends early on both devices (shield on iPhone, quit on Mac, same as expiry). Calm copy, no guilt. Revoking mid-use is expected to be technically possible on iOS (**to verify** in Run 5). |
-| D4 | Same app bought on both devices while offline. | Run 6 | Overlapping duplicate purchase is voided and refunded; extensions are not duplicates. |
-| D5 | Mac signing for CloudKit. Today: ad-hoc, no entitlements. | Run 9 | Development signing for own Macs; Developer ID + notarization before any outside beta. |
+| D4 | **Decided: void and refund.** Same app bought on both devices while offline. | Run 6 | Overlapping duplicate purchase is voided and refunded; extensions are not duplicates. |
+| D5 | **OPEN.** Mac signing for CloudKit. Today: ad-hoc, no entitlements. Related: the paid Apple Developer account is needed at Run 5, not just at distribution (see Risks). | Run 9 | Development signing for own Macs; Developer ID + notarization before any outside beta. |
 | D6 | **Decided:** which modes sync in the first iPhone release. | Run 8 | Tokens/quick look only. Bookings, reply mode and emergency pass stay Mac-only until platform-tested (the proposal says they still need testing). |
 | D7 | **Decided:** iOS needs an Xcode project (app extensions, entitlements). This reverses the spec's "SwiftPM, no Xcode project" for iOS only. | Run 8 | Human creates the `.xcodeproj` once in Xcode; the agent never generates a `.pbxproj`. Mac stays SwiftPM. |
 
@@ -61,7 +61,7 @@ Total is roughly **6–10 weeks** of focused work. Device testing and Apple's Fa
 ### Task 5.1 — Spike app (throwaway, not committed to `Sources/`)
 Human creates a bare iOS Xcode project on the paid developer account. Build the minimum to answer:
 - [ ] Select one app with the Family Activity picker; shield it with `ManagedSettingsStore`.
-- [ ] Remove the shield for N seconds, then re-shield. Target: 2 min (D1). Pass: re-shield within ±15 s of expiry in at least 19 of 20 trials (proposed tolerance; adjust if you disagree). Try (a) `DeviceActivitySchedule` windows shorter than 15 min (**to verify:** the system may reject short intervals), (b) 15-min schedule plus thresholds, (c) an in-app timer, (d) a local notification as a nudge.
+- [ ] Remove the shield for N seconds, then re-shield. Target: 2 min (D1). Pass: re-shield within ±15 s of expiry in **all 20** trials (consistency is the priority: report the spread, not just the average). Try (a) `DeviceActivitySchedule` windows shorter than 15 min (**to verify:** the system may reject short intervals), (b) 15-min schedule plus thresholds, (c) an in-app timer, (d) a local notification as a nudge.
 - [ ] Shield Action button flow: what can the shield do on tap, and can it get the user into myTime to buy access (**to verify**)?
 - [ ] State handoff through an App Group container to the extensions; note extension memory/time limits.
 - [ ] Revoke mid-use: apply a shield while the app is in the foreground, and confirm the user is moved to the shield promptly (needed for D3).
@@ -153,7 +153,8 @@ Pure Mac, no accounts. Validates the sync rules end to end.
 ## Risks, by likelihood × impact
 
 1. **iPhone can't re-lock short windows** (Run 5). Mitigation: spike first; D1.
-2. **Entitlement approval delay.** Mitigation: apply in Run 5; development builds proceed meanwhile.
+2. **Paid developer account not available until late.** Family Controls and CloudKit are believed to need the paid program for development builds too, and free-account iOS builds expire after 7 days. Without it, the Run 5 gate cannot be passed. Mitigation: buy it at Run 5; it also starts the approval clock.
+2b. **Entitlement approval delay.** Mitigation: apply in Run 5; development builds proceed meanwhile.
 3. **Run 6.7 refactor regresses the Mac app.** Mitigation: 126 existing tests are the guard; ledger is a view behind the same public API.
 4. **Voiding a purchase mid-use feels punitive.** Mitigation: only the latest conflicting purchase is voided and refunded, neutral copy, rare by construction (spend only from the last-synced balance).
 5. **Signing change breaks LaunchAgent/installer** (Run 9). Mitigation: manual test pass on a release build.
