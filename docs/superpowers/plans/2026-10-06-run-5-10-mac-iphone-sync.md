@@ -27,7 +27,7 @@
 Total is roughly **6–10 weeks** of focused work. Device testing and Apple's Family Controls distribution approval (calendar weeks, outside our control) dominate, not code. Apply for that approval during Run 5.
 
 **Go/no-go gates**
-- After **Run 5:** if iPhone cannot re-lock reliably at a window length the product can live with, stop and decide (D1) before Run 6.
+- After **Run 5:** if iPhone cannot re-lock reliably at a window length the product can live with, stop and revisit D1 before Run 6.
 - After **Run 7:** if the sync rules misbehave under fault injection, fix before touching iOS.
 
 ---
@@ -36,13 +36,13 @@ Total is roughly **6–10 weeks** of focused work. Device testing and Apple's Fa
 
 | # | Decision | Needed by | Recommendation |
 |---|---|---|---|
-| D1 | Shortest unlock window iPhone can honor. Mac quick looks are 30 s per token today. | Run 5 | Measure first. If iOS can't re-lock short windows, either raise the shared window for both devices or document a minimum. Don't promise a duration before the spike. |
+| D1 | **Decided: shortest shared unlock window is 2 minutes.** Mac quick looks are 30 s per token today, so the shared economy needs a 2-minute minimum (e.g. 1 token = 2 min); the spec revision must change this. | Run 5 | Run 5 passes only if iPhone re-locks at 2 min within the lateness tolerance set in Task 5.1. If it can't, raise the shared minimum for both devices rather than letting expiries differ. |
 | D2 | Who credits focus when a session is started on one device and the user works on the other? | Run 6 | Each device reports vested **intervals**; credit is the union of intervals, so overlap can't double count. Mac vests with its idle detection; iPhone reports only while its own client confirms the session is running. |
-| D3 | Offline double-spend policy. | Run 6 | Allow offline spending from the last-synced balance. On merge, an overdraw becomes a **debt** that later earnings pay off. Never revoke an unlock already given. |
+| D3 | **Decided: no debt.** Offline double-spend policy. | Run 6 | Allow offline spending from the last-synced balance. On merge, if total spending exceeds earnings, the **latest purchase by `HybridStamp` is voided and refunded**, so the balance never goes negative. If that purchase was the only one backing a grant, the unlock ends early on both devices (shield on iPhone, quit on Mac, same as expiry). Calm copy, no guilt. Revoking mid-use is expected to be technically possible on iOS (**to verify** in Run 5). |
 | D4 | Same app bought on both devices while offline. | Run 6 | Overlapping duplicate purchase is voided and refunded; extensions are not duplicates. |
 | D5 | Mac signing for CloudKit. Today: ad-hoc, no entitlements. | Run 9 | Development signing for own Macs; Developer ID + notarization before any outside beta. |
-| D6 | Which modes sync in the first iPhone release. | Run 8 | Tokens/quick look only. Bookings, reply mode and emergency pass stay Mac-only until platform-tested (the proposal says they still need testing). |
-| D7 | iOS needs an Xcode project (app extensions, entitlements). This reverses the spec's "SwiftPM, no Xcode project" for iOS only. | Run 8 | Human creates the `.xcodeproj` once in Xcode; the agent never generates a `.pbxproj`. Mac stays SwiftPM. |
+| D6 | **Decided:** which modes sync in the first iPhone release. | Run 8 | Tokens/quick look only. Bookings, reply mode and emergency pass stay Mac-only until platform-tested (the proposal says they still need testing). |
+| D7 | **Decided:** iOS needs an Xcode project (app extensions, entitlements). This reverses the spec's "SwiftPM, no Xcode project" for iOS only. | Run 8 | Human creates the `.xcodeproj` once in Xcode; the agent never generates a `.pbxproj`. Mac stays SwiftPM. |
 
 ---
 
@@ -61,13 +61,14 @@ Total is roughly **6–10 weeks** of focused work. Device testing and Apple's Fa
 ### Task 5.1 — Spike app (throwaway, not committed to `Sources/`)
 Human creates a bare iOS Xcode project on the paid developer account. Build the minimum to answer:
 - [ ] Select one app with the Family Activity picker; shield it with `ManagedSettingsStore`.
-- [ ] Remove the shield for N seconds, then re-shield. Try (a) `DeviceActivitySchedule` windows shorter than 15 min (**to verify:** the system may reject short intervals), (b) 15-min schedule plus thresholds, (c) an in-app timer, (d) a local notification as a nudge.
+- [ ] Remove the shield for N seconds, then re-shield. Target: 2 min (D1). Pass: re-shield within ±15 s of expiry in at least 19 of 20 trials (proposed tolerance; adjust if you disagree). Try (a) `DeviceActivitySchedule` windows shorter than 15 min (**to verify:** the system may reject short intervals), (b) 15-min schedule plus thresholds, (c) an in-app timer, (d) a local notification as a nudge.
 - [ ] Shield Action button flow: what can the shield do on tap, and can it get the user into myTime to buy access (**to verify**)?
 - [ ] State handoff through an App Group container to the extensions; note extension memory/time limits.
+- [ ] Revoke mid-use: apply a shield while the app is in the foreground, and confirm the user is moved to the shield promptly (needed for D3).
 - [ ] Survive: app force-quit, reboot, Low Power Mode, airplane mode.
 - [ ] Measure re-shield latency (expected vs actual) over 20+ trials per mechanism.
 
-**Deliverable:** a short results table appended to `IMPLEMENTATION_NOTES.md` under `## Run 5`: mechanism, shortest window honored, worst-case lateness, failure modes. This answers D1.
+**Deliverable:** a short results table appended to `IMPLEMENTATION_NOTES.md` under `## Run 5`: mechanism, shortest window honored, worst-case lateness, failure modes. This confirms or breaks D1 and D3.
 
 ### Task 5.2 — Apply for Family Controls (Distribution)
 - [ ] Human submits Apple's entitlement request. TestFlight and App Store need it; development builds don't (**to verify**).
@@ -87,12 +88,12 @@ Human creates a bare iOS Xcode project on the paid developer account. Build the 
 - `SharedEconomy { focusSecondsPerToken, quickLookSecondsPerToken, quickLookMaxTokens, dayStartHour, stamp }` — last-writer-wins. Needed so both devices compute the same balance. Tightening applies now; loosening reuses the existing 24 h pending-change rule. Other settings stay per-device.
 - `AppKey` = cross-device identity for a blocked app. iOS app selections are opaque and device-local, so each device maps its own local selection to an `AppKey` (user pairs "Discord" on both). Bundle IDs stay Mac-side.
 - `LedgerState.merge(_:)` — pure, **commutative, associative, idempotent**.
-- `Balance`: `tokens(dayKey) = floor(unionSeconds(intervals) / focusSecondsPerToken) − Σ purchases − debt`; daily reset is free because entries carry a `dayKey` and only the current key counts.
+- `Balance`: `tokens(dayKey) = floor(unionSeconds(intervals) / focusSecondsPerToken) − Σ valid purchases`; daily reset is free because entries carry a `dayKey` and only the current key counts.
 
 ### Tasks (tests first; once written they are the contract and are copied verbatim)
 - [ ] 6.1 `LedgerMergeTests`: merge is commutative, associative, idempotent; duplicate and out-of-order delivery converge; three-device permutations.
 - [ ] 6.2 `FocusCreditTests`: overlapping intervals from Mac and iPhone count once; start on one device, stop on the other; concurrent start; interval extended after a partition.
-- [ ] 6.3 `SpendTests`: same purchase delivered twice charges once; offline overdraw becomes debt, not revocation (D3); duplicate overlapping purchase voided and refunded (D4); extension is not a duplicate; one purchase unlocks the app on both devices with one expiry.
+- [ ] 6.3 `SpendTests`: same purchase delivered twice charges once; offline overdraw voids and refunds the latest purchase by stamp, balance never negative (D3), and ends the unlock early if it was the only backing purchase; duplicate overlapping purchase voided and refunded (D4); extension is not a duplicate; one purchase unlocks the app on both devices with one expiry.
 - [ ] 6.4 `DayBoundaryTests`: reset at day start; entries from different time zones keep the writer's `dayKey`.
 - [ ] 6.5 `FaultyTransportTests` (in-memory transport that delays, reorders, duplicates, drops, goes offline): all replicas converge after healing.
 - [ ] 6.6 `MigrationTests`: schema 1 → 2 turns the existing `tokens`/`progressSeconds` into an opening entry; `StateCodec` HMAC still verifies.
@@ -111,7 +112,7 @@ Pure Mac, no accounts. Validates the sync rules end to end.
 - [ ] `StateStore`: schema 2, HMAC kept; separate DEV state dir per instance (`state-dev.json` today) so two DEV instances can run side by side.
 - [ ] Sync triggers are events only (state change, app foreground, one scheduled retry). **No polling timer**; any retry `Timer` sets `tolerance`.
 - [ ] Panel: quiet sync line (copy defined in Task 5.0). Never a pop-up.
-- [ ] `docs/MANUAL_TESTS.md`: two DEV instances against one folder — start focus on A, stop on B, earn once; buy on A, unlocked on B with the same expiry; disconnect, spend on both, reconnect, observe debt rule.
+- [ ] `docs/MANUAL_TESTS.md`: two DEV instances against one folder — start focus on A, stop on B, earn once; buy on A, unlocked on B with the same expiry; disconnect, spend on both, reconnect, observe the later purchase voided and refunded.
 
 **Gate:** sync rules proven under fault injection and with two live instances.
 
@@ -154,7 +155,7 @@ Pure Mac, no accounts. Validates the sync rules end to end.
 1. **iPhone can't re-lock short windows** (Run 5). Mitigation: spike first; D1.
 2. **Entitlement approval delay.** Mitigation: apply in Run 5; development builds proceed meanwhile.
 3. **Run 6.7 refactor regresses the Mac app.** Mitigation: 126 existing tests are the guard; ledger is a view behind the same public API.
-4. **Offline spend UX feels punitive.** Mitigation: debt rule, no revocation, neutral copy.
+4. **Voiding a purchase mid-use feels punitive.** Mitigation: only the latest conflicting purchase is voided and refunded, neutral copy, rare by construction (spend only from the last-synced balance).
 5. **Signing change breaks LaunchAgent/installer** (Run 9). Mitigation: manual test pass on a release build.
 6. **Scope creep** into bookings/reply/emergency on iPhone. Mitigation: D6; revisit after beta signals.
 
