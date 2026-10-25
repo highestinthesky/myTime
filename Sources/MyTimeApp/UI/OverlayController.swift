@@ -35,17 +35,23 @@ import SwiftUI
             return
         }
         closeGate()
+        let now = model.displayNow
+        let pause = model.core.gatePauseSeconds(appID: app.id, at: now)
         let session = GateSession(
             app: app,
             bundleURL: bundleURL,
             mode: mode,
-            pauseEndsAt: Date().addingTimeInterval(Double(model.core.setting(.gatePauseSeconds))))
+            now: now,
+            pauseEndsAt: now.addingTimeInterval(Double(pause)))
         self.session = session
 
         let panel = OverlayPanel(allowsKey: true)
         let actions = OverlayActions(
             neverMind: { [weak self] in
                 self?.neverMind()
+            },
+            unlock: { [weak self] length, cost in
+                self?.unlock(length, cost)
             },
             quickLook: { [weak self] count in
                 self?.quickLook(count)
@@ -86,10 +92,12 @@ import SwiftUI
         panel.makeKey()
 
         gateClock.start(interval: 1) { [weak self] in
-            guard let self, let session = self.session else {
+            guard let self else { return }
+            self.model.refresh(.uiTick)
+            guard let session = self.session else {
                 return
             }
-            session.now = Date()
+            session.now = self.model.displayNow
             if case let .emergencyWaiting(until) = session.step {
                 session.touch()
                 if session.now >= until {
@@ -163,6 +171,26 @@ import SwiftUI
         closeGate()
         model.endFocus()
         showGate(app: app, bundleURL: bundleURL)
+    }
+
+    private func unlock(_ length: Int, _ cost: Int) {
+        guard let session else { return }
+        session.touch()
+        do {
+            _ = try model.perform {
+                try $0.buyUnlock(appID: session.app.id, lengthSeconds: length, expectedCost: cost)
+            }
+            let bundleURL = session.bundleURL
+            closeGate()
+            relaunch(bundleURL)
+        } catch let error as EngineError {
+            if error == .priceChanged || error == .notEnoughTokens {
+                session.selectedLength = nil
+            }
+            session.errorMessage = error.userMessage
+        } catch {
+            session.errorMessage = nil
+        }
     }
 
     private func quickLook(_ tokens: Int) {

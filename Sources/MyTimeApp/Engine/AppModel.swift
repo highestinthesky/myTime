@@ -15,7 +15,9 @@ import MyTimeCore
     @ObservationIgnored private(set) var overlays: OverlayController!
     @ObservationIgnored private(set) var router: WindowRouter!
     @ObservationIgnored private(set) var headsUp: HeadsUpController!
+    @ObservationIgnored private(set) var unlockWarning: UnlockWarningController!
     @ObservationIgnored private let countdownTimer = RepeatingUITimer()
+    @ObservationIgnored private let unlockLabelTimer = RepeatingUITimer()
     @ObservationIgnored private let bookingLabelTimer = RepeatingUITimer()
     @ObservationIgnored private let panelTimer = RepeatingUITimer()
     @ObservationIgnored private let settingsTimer = RepeatingUITimer()
@@ -32,6 +34,7 @@ import MyTimeCore
         self.overlays = OverlayController(model: self)
         self.router = WindowRouter(model: self)
         self.headsUp = HeadsUpController(model: self)
+        self.unlockWarning = UnlockWarningController(model: self)
     }
     func launch() {
         Installer.selfHeal()
@@ -67,8 +70,10 @@ import MyTimeCore
                 headsUp.show(.started, bookingID: bookingID)
             case let .bookingHeadsUp(bookingID):
                 headsUp.show(.endingSoon, bookingID: bookingID)
-            case .unlockWarning, .unlockEnded:
-                break  // Presented by the Task 3 UI.
+            case .unlockWarning:
+                unlockWarning.show()
+            case .unlockEnded:
+                unlockWarning.close()
             case .uninstall:
                 saveNow()
                 Installer.uninstall()
@@ -107,6 +112,9 @@ import MyTimeCore
         perform { core in
             core.endFocus()
         }
+    }
+    func endUnlock() {
+        perform { $0.endUnlock() }
     }
     func confirmClaim() {
         perform { core in
@@ -185,10 +193,12 @@ import MyTimeCore
         comparable.clock = lastSaved.clock
         let saveAge = core.state.clock.lastWall - lastSaved.clock.lastWall
         let changed = comparable != lastSaved
-        if saveAge >= 60 || (changed && !throttled) { saveNow() }
+        let unlockChanged = comparable.unlock != lastSaved.unlock || comparable.unlockStreak != lastSaved.unlockStreak
+        if saveAge >= 60 || (changed && (!throttled || unlockChanged)) { saveNow() }
     }
     private func updateActivityAndTimers() {
-        if overlays.isGateVisible || !core.state.grants.isEmpty || core.activeBooking != nil {
+        if overlays.isGateVisible || !core.state.grants.isEmpty || core.activeUnlock != nil || core.activeBooking != nil
+        {
             if activity == nil {
                 activity = ProcessInfo.processInfo.beginActivity(
                     options: [.userInitiatedAllowingIdleSystemSleep], reason: "Enforcing app limits")
@@ -204,7 +214,14 @@ import MyTimeCore
         } else {
             countdownTimer.start(interval: 1) { [weak self] in self?.refresh(.uiTick) }
         }
-        if grantCountdown == nil && bookingCountdown != nil {
+        if grantCountdown == nil && core.activeUnlock != nil {
+            unlockLabelTimer.start(interval: Double(Constants.unlockSecondsPerUnit)) { [weak self] in
+                self?.uiNow = Date()
+            }
+        } else {
+            unlockLabelTimer.stop()
+        }
+        if grantCountdown == nil && core.activeUnlock == nil && bookingCountdown != nil {
             bookingLabelTimer.start(interval: 60) { [weak self] in
                 self?.uiNow = Date()
             }
@@ -238,9 +255,14 @@ import MyTimeCore
         }
         return max(0, booking.end.timeIntervalSince(displayNow))
     }
+    var unlockRemaining: Double? {
+        guard let unlock = core.activeUnlock else { return nil }
+        return max(0, unlock.endsAt.timeIntervalSince(displayNow))
+    }
     var showsClaimDot: Bool {
         core.claimableSeconds >= Constants.minClaimable
             && grantCountdown == nil
+            && unlockRemaining == nil
             && bookingCountdown == nil
     }
     #if DEV_TIMESCALE

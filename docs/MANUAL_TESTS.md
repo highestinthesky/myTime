@@ -68,3 +68,13 @@ Then re-run steps 1–7 against a release build (`scripts/build.sh`).
 ## Run 5 — Unlock
 
 Task 2 adds Core only; its plan assigns no new manual steps. Unlock UI checks 26–30 follow in Task 3. These checks are for the reviewer; no install or launch-agent commands were run.
+
+### Tasks 2–3 review setup
+
+Task 4 has not been implemented: legacy modes/defaults are still present, migration is absent, and Quick look/Reply remain alongside Unlock. Before reviewing steps 26–30 on a DEV build, enable Unlock for Discord in Settings and let its pending change apply (60 s at DEV defaults). Do not install a release build before Task 4 is implemented and reviewed.
+
+26. **Unlock gate:** press "+1 token" 6 times, open Discord. The lengths 10 s, 20 s, 50 s, 100 s show their prices but stay disabled for 5 s; nothing is preselected and the button reads "Choose a length". Pick 20 s → "Unlock 20 s · 2 tokens". Buy → Discord relaunches, no pill shows, and the menu bar shows the hourglass and "20 s".
+27. **Warning:** type in Discord during an Unlock. At 5 s left, "Discord closes in 0:05" appears top-right and typing still goes to Discord. **End now** quits Discord at once.
+28. **Streak:** reopen Discord within 30 s of the end → the pause is 10 s, prices are doubled, and the card header reads "2× — resets at …". Choose a length and keep the gate open past that time → the prices and the Unlock button drop to 1× without closing the gate.
+29. **Panel:** during an Unlock the panel shows "Unlock · 0:15 left", **End Unlock**, and "Next Unlock: 2× until …". **End Unlock** quits Discord.
+30. **Restart:** during an Unlock, `launchctl kickstart -k gui/$(id -u)/local.mytime.agent` → the same end time; a warning already shown doesn't show again; at the end Discord quits.

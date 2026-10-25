@@ -54,7 +54,7 @@ struct EmergencyFlowView: View {
                 .buttonStyle(.bordered)
                 Spacer()
                 Button("Start wait") {
-                    let until = Date().addingTimeInterval(Double(wait))
+                    let until = model.displayNow.addingTimeInterval(Double(wait))
                     session.step = .emergencyWaiting(until: until)
                     session.touch()
                 }

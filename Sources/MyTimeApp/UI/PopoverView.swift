@@ -35,6 +35,7 @@ struct PopoverView: View {
                 claimRow
             }
             tokensRow
+            UnlockBlock(model: model)
             SessionsBlock(model: model)
             todayStrip
             #if DEV_TIMESCALE

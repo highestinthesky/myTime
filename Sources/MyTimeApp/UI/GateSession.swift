@@ -24,20 +24,21 @@ enum GateStep: Equatable {
     let pauseSeconds: Double
     var now: Date
     var lastInteraction: Date
+    var selectedLength: Int?
     var quickLookTokens = 1
     var errorMessage: String?
     var step: GateStep = .choose
     var replyNote = ""
     var emergencyReason = ""
 
-    init(app: BlockedApp, bundleURL: URL?, mode: GateMode, pauseEndsAt: Date) {
+    init(app: BlockedApp, bundleURL: URL?, mode: GateMode, now: Date, pauseEndsAt: Date) {
         self.app = app
         self.bundleURL = bundleURL
         self.mode = mode
         self.icon = NSWorkspace.shared.icon(forFile: bundleURL?.path ?? "")
         self.pauseEndsAt = pauseEndsAt
-        self.pauseSeconds = max(0, pauseEndsAt.timeIntervalSinceNow)
-        self.now = Date()
+        self.pauseSeconds = max(0, pauseEndsAt.timeIntervalSince(now))
+        self.now = now
         self.lastInteraction = Date()
     }
 

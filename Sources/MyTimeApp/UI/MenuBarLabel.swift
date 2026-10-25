@@ -9,6 +9,9 @@ struct MenuBarLabel: View {
             if let countdown = model.grantCountdown {
                 Image(systemName: "hourglass")
                 Text(DurationFormat.clock(countdown.remaining))
+            } else if let remaining = model.unlockRemaining {
+                Image(systemName: "hourglass")
+                Text(UnlockCopy.menuBarRemaining(remaining))
             } else if let remaining = model.bookingCountdown {
                 Image(systemName: "hourglass")
                 Text(DurationFormat.short(remaining))

@@ -4,6 +4,7 @@ import SwiftUI
 
 struct OverlayActions {
     let neverMind: () -> Void
+    let unlock: (_ lengthSeconds: Int, _ expectedCost: Int) -> Void
     let quickLook: (Int) -> Void
     let reply: (String) -> Void
     let openEmergency: () -> Void

@@ -198,3 +198,21 @@ Commands and results:
 - `swift format --in-place --recursive Sources Tests && swift build && swift test` — passed after those fixes: 159 tests, zero failures.
 - `swift format --in-place --recursive Sources Tests && swift build && swift test` — final Task 2 verification after additional coverage: build zero errors, 163 tests, zero failures. Swift build/test used authorized compiler-cache access; logs were redirected to `/tmp/mytime-task2-build.log` and `/tmp/mytime-task2-test.log`.
 - `git diff --check` — passed.
+
+### Task 3
+
+Built the gate's four-length Unlock picker, live quote and affordability updates, streak-derived fixed pause, purchase/error handling, non-key warning with End now, menu bar countdown and timer precedence, panel Unlock/streak block, and active-Unlock activity assertion. Quick look/Reply cards remain as required. Blocked Apps already iterates AccessMode.allCases, so no handwritten mode list needed changing. Manual steps 26–30 are copied into the Run 5 checklist, with an intermediate-build prerequisite to enable Unlock in Settings.
+
+Deviations and clarifications:
+- GateSession now receives trusted display time for its pause and gate clock. The emergency wait's start timestamp also uses display time, keeping its existing countdown in the same time domain after the gate clock change. Timeout interaction timestamps still use their existing wall-time UI clock. This prevents an existing clock offset from changing the intended wait duration.
+- Unlock state/streak changes bypass the existing UI-tick save throttle. Otherwise a warning first reached by the new gate/warning UI refresh could remain unsaved for up to a minute and repeat after restart, contradicting the persisted-warning requirement in §5.3. Clock-only changes and focus accrual retain the existing throttle. This is a narrow exception to the blanket wording of §3.5 step 7; reviewer should confirm the durability priority.
+- The next-price line is conditional on multiplier > 1, including the warning. Spec §7.6.1 says it is always above 1 during an Unlock, but an Unlock spanning the day boundary correctly quotes 1× under §5.3. No fabricated reset time or extra string is shown.
+- No Core rules, plan tests, existing tests, default modes, migration code, or old-mode removal changed in this task. OverlayController is 317 lines (the convention is approximately 300); kept its single gate/pill responsibility rather than refactoring unrelated existing controllers.
+
+Unverified: installed-app checks 26–30, keyboard focus during warning, visual layout and window resizing, screen placement, menu bar cadence in real use, app relaunch/termination, restart persistence through the actual agent, and Activity Monitor resource usage. No install/uninstall, Application Support, or launch-agent commands were run.
+
+Commands and results:
+- `swift format --in-place --recursive Sources Tests` — passed throughout.
+- `swift build && swift test` — initial build during incomplete AppModel wiring failed with missing `unlockRemaining` / `endUnlock` members (a scripted edit had stopped on a formatting-sensitive match); completed wiring without changing tests. Subsequent build passed, 163 tests passed, zero failures.
+- `swift build -Xswiftc -DDEV_TIMESCALE && swift format --in-place --recursive Sources Tests && swift build && swift test` — final Task 3 verification: DEV and normal builds zero errors, 163 tests passed, zero failures. Authorized compiler-cache access was used; logs are `/tmp/mytime-task3-dev-build.log`, `/tmp/mytime-task3-build.log`, `/tmp/mytime-task3-test.log`.
+- `git diff --check` — passed. No pre-existing tests were edited or deleted.

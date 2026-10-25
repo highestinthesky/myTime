@@ -17,6 +17,9 @@ struct GateCards: View {
 
     var body: some View {
         VStack(spacing: 12) {
+            if session.app.modes.contains(.unlock) {
+                UnlockCard(session: session, model: model, actions: actions)
+            }
             if tokens == 0 && hasTokenMode {
                 noTokens
             } else {
@@ -161,7 +164,7 @@ struct GateCards: View {
 }
 
 extension View {
-    fileprivate func gateCardSurface() -> some View {
+    func gateCardSurface() -> some View {
         padding(12)
             .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 12))
     }
