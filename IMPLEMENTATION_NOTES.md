@@ -352,3 +352,7 @@ Read the full `main..run-5-unlock` source diff for how the tasks fit together: u
 - 31 (Claude): the 0.1.0 `state-dev.json` decoded as `.migrated` and was saved as schema 2 on first launch. No tamper notice, all 151 history events kept, Discord has Unlock + Sessions, notice set.
 - 33 (Claude): Finder shows the new icon for `/Applications/myTime.app`.
 - 26–30, 32 (the user): all passed. Computer use couldn't reach myTime's windows (menu-bar-only app), so the user ran these.
+
+### Release install (0.2.0)
+
+`scripts/build.sh` installed the release build over the 0.1.0 data. Before installing, the real `state.json` was copied to `state-0.1.0-backup.json` in the same folder; that copy only opens in 0.1.0. On first launch the file decoded as `.migrated` and was saved as schema 2. There was no tamper notice, and tokens (8), all 500 history events, and weekly stats were unchanged. All six apps now have Unlock + Sessions, and the migration notice is pending in the panel.

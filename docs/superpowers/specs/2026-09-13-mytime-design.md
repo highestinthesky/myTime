@@ -1,6 +1,6 @@
 # myTime — Design Doc (v1)
 
-**Status:** Approved design, revision 8 · 2026-10-24. Runs 1–4 (§12) are built and reviewed (0.1.0, 126 tests). Run 5 (Unlock, 0.2.0) is built and code-reviewed, pending the DEV manual checks; its plan is `docs/superpowers/plans/2026-10-24-run-5-unlock.md`.
+**Status:** Approved design, revision 8 · 2026-10-24. Runs 1–4 (§12) are built and reviewed (0.1.0, 126 tests). Run 5 (Unlock, 0.2.0) is built, reviewed, and released; its plan is `docs/superpowers/plans/2026-10-24-run-5-unlock.md`.
 **Audience:** the implementing model (Codex) and the reviewer (Claude). For later changes, update this document first (see `AGENTS.md`).
 
 **Revision 2 changes:**
