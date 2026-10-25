@@ -75,7 +75,7 @@ These checks are for the reviewer; no install or launch-agent commands were run 
 29. **Panel:** during an Unlock the panel shows "Unlock · 0:15 left", **End Unlock**, and "Next Unlock: 2× until …". **End Unlock** quits Discord.
 30. **Restart:** during an Unlock, `launchctl kickstart -k gui/$(id -u)/local.mytime.agent` → the same end time; a warning already shown doesn't show again; at the end Discord quits.
 
-31. **Migration:** with a `state-dev.json` written by 0.1.0 (Quick look on), install the DEV build → no tamper banner, tokens unchanged, the migration notice shows once in the panel, Discord shows Unlock on in Settings. **Dismiss** removes it for good.
+31. **Migration:** with a `state-dev.json` written by 0.1.0 (Quick look on), install the DEV build → no tamper banner, history unchanged (tokens too if the file was saved today; otherwise the new day clears them as usual), the migration notice shows once in the panel, Discord shows Unlock on in Settings. **Dismiss** removes it for good.
 32. **Settings:** Blocked Apps shows "Unlock" and "Sessions". Turning Unlock on shows the loosening alert. With an Unlock running and TextEdit blocked with Unlock, turning Unlock off for TextEdit quits TextEdit at once; Discord stays open until the end.
 
 33. **Icon:** after the next reviewer-approved install, `/Applications/myTime.app` shows the new icon in Finder and Get Info (if Finder shows a blank icon, `touch /Applications/myTime.app`). This was not run during implementation.

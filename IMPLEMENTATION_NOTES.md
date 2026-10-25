@@ -342,3 +342,7 @@ After the pill tint correction, reran the exact final pipeline above (same log p
 - Removed a stale `canExtend` mention from an AppModel comment.
 - The warm pill tint renders the app icon as a solid warm silhouette in the last 10 s. This meets §7.5; check it by eye during the manual run.
 - `swift format lint`, `swift build`, `swift build -Xswiftc -DDEV_TIMESCALE`, `swift test`: 173 tests, 0 failures.
+
+### Task 6 whole-run code review (Claude)
+
+Read the full `main..run-5-unlock` source diff for how the tasks fit together: update order (grant expiry → finish Unlock → warning → bookings), wake-ups (past candidates are filtered, so a skipped warning can't loop), coverage of every Unlock-enabled app, early End Unlock, the save exception, the menu bar/pill/warning timers against §3.6, gate pause and price refresh, and Settings removals enforced by the sweep. No code findings. Manual step 31 now allows for the day reset clearing tokens when the old DEV file is from an earlier day. The DEV manual checks (26–33) remain.
