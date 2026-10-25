@@ -78,3 +78,5 @@ Task 4 has not been implemented: legacy modes/defaults are still present, migrat
 28. **Streak:** reopen Discord within 30 s of the end → the pause is 10 s, prices are doubled, and the card header reads "2× — resets at …". Choose a length and keep the gate open past that time → the prices and the Unlock button drop to 1× without closing the gate.
 29. **Panel:** during an Unlock the panel shows "Unlock · 0:15 left", **End Unlock**, and "Next Unlock: 2× until …". **End Unlock** quits Discord.
 30. **Restart:** during an Unlock, `launchctl kickstart -k gui/$(id -u)/local.mytime.agent` → the same end time; a warning already shown doesn't show again; at the end Discord quits.
+
+33. **Icon:** after the next reviewer-approved install, `/Applications/myTime.app` shows the new icon in Finder and Get Info (if Finder shows a blank icon, `touch /Applications/myTime.app`). This was not run during implementation.

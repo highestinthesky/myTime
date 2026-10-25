@@ -216,3 +216,29 @@ Commands and results:
 - `swift build && swift test` — initial build during incomplete AppModel wiring failed with missing `unlockRemaining` / `endUnlock` members (a scripted edit had stopped on a formatting-sensitive match); completed wiring without changing tests. Subsequent build passed, 163 tests passed, zero failures.
 - `swift build -Xswiftc -DDEV_TIMESCALE && swift format --in-place --recursive Sources Tests && swift build && swift test` — final Task 3 verification: DEV and normal builds zero errors, 163 tests passed, zero failures. Authorized compiler-cache access was used; logs are `/tmp/mytime-task3-dev-build.log`, `/tmp/mytime-task3-build.log`, `/tmp/mytime-task3-test.log`.
 - `git diff --check` — passed. No pre-existing tests were edited or deleted.
+
+### Task 5
+
+Built `scripts/make-icon.swift`, which draws every standard iconset representation at its own pixel size using a CoreGraphics bitmap context and AppKit PNG encoding, then invokes `/usr/bin/iconutil -c icns`. Generated and committed `Packaging/AppIcon.icns`; wired `CFBundleIconFile = AppIcon`, version `0.2.0` / `2`, and an unconditional icon copy before codesign in build.sh. With `set -euo pipefail`, a missing icon fails the packaging script rather than silently skipping it. Manual step 33 was appended.
+
+Design follows §10.4: centered 824-point rounded square with 185-point corners and a soft shadow, top #5BC0B2 / bottom #2F8F83 gradient, a white 520-point outer-diameter ring with 64-point stroke and a 36-point gap to a 270° clockwise wedge. At 16/32 px the gap is removed and the stroke is 80 points. Every representation is rendered separately; there are no external assets or dependencies.
+
+Deviations and verification limits:
+- Inspected the 1024 and 32 px PNGs using the image-viewing tool instead of launching Preview. Both are attached below for the reviewer. The iconset and PNGs stay in `/tmp`, not in Git; regenerate them with the command below if the temporary directory is cleared. Only the generated ICNS is committed.
+- Initial mixed AppKit/CoreGraphics previews were ambiguous; replaced the drawing with one CoreGraphics bitmap context. A PNG pixel check confirms the upper-left quarter is teal and the other three quarters are white, plus the white ring and correct gradient direction. This changes no design requirement.
+- Finder/Get Info appearance, icon caching, codesigning, and actual packaging/install were not run. Per the user's restriction, build.sh was edited but never executed. No Application Support or launch-agent operations occurred. No existing or plan tests changed.
+
+Commands and results:
+- `swift scripts/make-icon.swift /tmp/mytime-run5-icon` — passed on initial iterations, including iconutil (exit 0).
+- `swift scripts/make-icon.swift /tmp/mytime-run5-icon-final` — final generator passed, including iconutil (exit 0). Used authorized Swift compiler-cache access. Copied the final ICNS into Packaging.
+- Python standard-library validation of PNG headers/dimensions — all ten standard filenames and sizes passed; ICNS magic/declared byte length passed; Info.plist icon/version values passed. PNG pixel inspection confirmed the intended 270° wedge, ring, and gradient.
+- `swift format --in-place --recursive Sources Tests && swift build && swift test` — final Task 5 verification: formatting passed, build zero errors, 163 tests passed, zero failures. Build/test logs: `/tmp/mytime-task5-build.log`, `/tmp/mytime-task5-test.log`; generator log: `/tmp/mytime-task5-icon.log`.
+- `git diff --check` — passed.
+
+Reviewer previews (generated locally, not installed):
+
+![1024 px icon preview](/tmp/mytime-run5-icon-final/AppIcon.iconset/icon_512x512@2x.png)
+
+![32 px icon preview](/tmp/mytime-run5-icon-final/AppIcon.iconset/icon_32x32.png)
+
+Scoped final review of Tasks 2, 3, and 5: a fresh read-only reviewer inspected the combined implementation, plan contract, and both icon sizes. No Critical, Important, or actionable Minor findings. The review independently confirmed plan test text and unchanged pre-existing tests. Migration/real 0.1.0 state compatibility and legacy-mode removal remain explicitly deferred to Task 4; installed enforcement, keyboard focus, and Finder appearance remain manual reviewer checks. These are scope limits, not completed checks. Final branch verification reran `swift format --in-place --recursive Sources Tests && swift build && swift test`: formatting/build passed, 163 tests passed, zero failures.

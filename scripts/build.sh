@@ -13,6 +13,7 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN_DIR/myTime" "$APP/Contents/MacOS/myTime"
 cp Packaging/Info.plist "$APP/Contents/Info.plist"
+cp Packaging/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 codesign --force --sign - "$APP"
 
 launchctl bootout "gui/$(id -u)/local.mytime.agent" 2>/dev/null || true
