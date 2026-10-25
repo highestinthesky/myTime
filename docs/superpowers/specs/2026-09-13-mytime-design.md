@@ -1,6 +1,6 @@
 # myTime — Design Doc (v1)
 
-**Status:** Approved design, revision 7 · 2026-10-05. All four runs (§12) are built and reviewed; v1 is complete (0.1.0, 126 tests).
+**Status:** Approved design, revision 8 · 2026-10-24. Runs 1–4 (§12) are built and reviewed (0.1.0, 126 tests). Run 5 (Unlock, 0.2.0) is specified here and not built yet; its plan is `docs/superpowers/plans/2026-10-24-run-5-unlock.md`.
 **Audience:** the implementing model (Codex) and the reviewer (Claude). For later changes, update this document first (see `AGENTS.md`).
 
 **Revision 2 changes:**
@@ -37,6 +37,15 @@
 **Revision 7 changes** (documentation only, no behavior change):
 - status and workflow text now say v1 is complete; later changes follow the update-the-spec-first flow in `AGENTS.md` (§0, §12)
 
+**Revision 8 changes** (Run 5, from the "Token System Changes" proposal of 2026-10-23):
+- **Unlock** replaces Quick look, Reply mode, and grant extensions. Pick 1, 2, 5, or 10 minutes at the gate; each minute costs 1 token times the streak multiplier. One Unlock covers every app with the Unlock mode (§5.3)
+- **Streak:** an Unlock bought less than 15 minutes after the last one ended, on the same day, costs twice the last multiplier (§5.3)
+- the gate pause grows with the streak, up to 30 s (§5.3, §7.3)
+- a 30-second warning before an Unlock ends, without taking keyboard focus (§5.3, §7.6.1)
+- no countdown pill for Unlocks; the menu bar and panel show the time left (§7.1, §7.2, §7.5)
+- schema 2 with a one-time migration from 0.1.0 files (§5.11)
+- an app icon (§10)
+
 ---
 
 ## 0. How to use this document
@@ -53,7 +62,7 @@
 
 myTime is a macOS menu-bar app that makes distracting apps (Discord by default) cost something to open. The user earns **tokens** by running a **focus timer** while working. Tokens reset every day at 4:00 AM.
 
-Opening a blocked app shows a **gate** with a mandatory 5-second pause. Getting past it costs tokens (quick look, reply mode), uses a pre-booked **session** from a weekly allowance, or uses a once-a-week **emergency pass**. When access ends, myTime quits the app.
+Opening a blocked app shows a **gate** with a mandatory pause (5 seconds, longer during a streak). Getting past it costs tokens (an **Unlock** of 1, 2, 5, or 10 minutes), uses a pre-booked **session** from a weekly allowance, or uses a once-a-week **emergency pass**. When access ends, myTime quits the app.
 
 myTime runs all the time, restarts itself after a crash or force quit, can only be quit after a written reason and a wait, and delays any change that would make it less strict by 24 hours. It is quiet: it does no work unless something happens, and it never pops up over the user's work except when they try to open a blocked app.
 
@@ -64,8 +73,8 @@ It is for one person, on one Mac (Apple Silicon), installed locally without a de
 | Term | Meaning |
 |---|---|
 | **Blocked app** | An entry in the block list: display name, one or more bundle IDs, and a set of allowed access modes. |
-| **Day** | Starts at `dayStartHour` (default 4:00 AM local). All "daily" things (token reset, reply limit, claim budget, stats) use this boundary. The week starts Monday at the same hour. |
-| **Token (◆)** | Currency earned by focus time. Spent on quick looks, reply mode, and extensions. Unspent tokens and partial progress are cleared at the start of each day. There is no cap. |
+| **Day** | Starts at `dayStartHour` (default 4:00 AM local). All "daily" things (token reset, Unlock streaks, claim budget, stats) use this boundary. The week starts Monday at the same hour. |
+| **Token (◆)** | Currency earned by focus time. Spent on Unlocks. Unspent tokens and partial progress are cleared at the start of each day. There is no cap. |
 | **Progress** | Vested focus seconds toward the next token (`0 ≤ progress < focusSecondsPerToken`). |
 | **Focus session** | An open-ended, user-started stopwatch during which eligible time is credited. |
 | **Unvested time** | Focus time since the last keyboard/mouse input. Discarded if the user turns out to be idle. |
@@ -73,9 +82,9 @@ It is for one person, on one Mac (Apple Silicon), installed locally without a de
 | **Unclaimed away time** | Today's accumulated away gaps. The user can count some of it as focus from the menu bar panel, within a daily budget. |
 | **Gate** | Floating card shown when a blocked app is opened without access. |
 | **Focus card** | Variant of the gate shown when a blocked app is opened during a focus session. |
-| **Grant** | A paid, time-limited permission for one blocked app. Kinds: quick look, reply, emergency. |
-| **Quick look** | 1 token = 30 s of access, up to 3 tokens at once. |
-| **Reply mode** | 2 tokens = 3 min. Requires a typed intention note. Max 3 per day. |
+| **Grant** | A time-limited permission for one blocked app. Only the emergency pass creates grants. (0.1.0 also had quick look and reply grants; a migrated file may still hold one until it expires.) |
+| **Unlock** | Access to every blocked app with the Unlock mode, for 1, 2, 5, or 10 minutes chosen at the gate. Costs minutes × multiplier tokens. One at a time; no extensions, no refunds. |
+| **Streak / multiplier** | An Unlock bought less than 15 minutes after the previous one ended, on the same day, costs twice the previous multiplier (1×, 2×, 4×, …). Otherwise it costs 1×. |
 | **Booked session** | A window booked ≥ 10 min ahead during which apps with the "Sessions" mode open freely. Draws from the weekly allowance. |
 | **Allowance** | Weekly budget of booked-session time (default 5 h). |
 | **Emergency pass** | Once per week: typed reason + 60 s wait → 10 min access. No tokens needed. |
@@ -96,12 +105,13 @@ It is for one person, on one Mac (Apple Silicon), installed locally without a de
 | Self-declared focus + idle detection (not an app allowlist) | Allowlists break on legitimate browser and doc reading. The user works mostly on the Mac, and the claim flow covers some off-screen time. |
 | Vesting based on last-input timestamps | Accrual stays exact no matter how often the engine refreshes, which is what makes sparse (30 s) sampling safe. |
 | 5-second pause on the gate | The pause is what weakens impulse opens. The token price mostly sets the budget. |
-| 15 min → 1 token → 30 s; the countdown starts when access is bought; progress carries over within a day | The ratio suits impulse checks. The app relaunches within about a second, and a countdown that waited for it read as broken (removed launch grace after Run 2 testing). |
+| 15 min → 1 token → 1 min of Unlock; the length is chosen up front; the countdown starts when it's bought; progress carries over within a day | Put the friction at the decision, not during use. 0.1.0's 30-second quick looks and in-use extensions meant constant clicking, which pushed the user to the phone. The app relaunches within about a second, and a countdown that waited for it read as broken (removed launch grace after Run 2 testing). |
+| **Doubling streak instead of a daily cap** | Repeated checking gets expensive fast (four Unlocks in 20 minutes cost 31 tokens instead of 13) without a hard limit. Waiting 15 minutes, or a new day, resets it. The price is computed from the last Unlock whenever it's shown, so no timer runs. |
 | **Tokens reset daily at 4:00 AM, no cap** | Resetting stops hoarding across days, which was the cap's only job. Dropping the cap removes the irritating "stop earning" state. A 4 AM boundary keeps late-night sessions intact. |
 | Tokens for impulses, weekly allowance for planned sessions | Planned calls and gaming aren't the habit being broken. Booking ≥ 10 min ahead prevents impulse use. Booking is allowed during focus. |
-| Reply mode with typed note and daily limit | Legitimate replies need more than 30 s. The note, limit, and history keep it from becoming a loophole. |
+| One Unlock mode (Quick look and Reply mode removed in Run 5) | Reply mode was the cheapest gate (1.5 min per token, guarded only by a note), so usage drifted to it. A 2- or 5-minute Unlock covers replying. No mode is a cheaper shortcut than another. |
 | Weekly emergency pass | A blocker the user gets stuck in gets uninstalled. One hard, rare way out is safer. |
-| **Quiet UI** | No pop-ups over work except the gate. Away-time claims wait in the panel, marked by a dot on the menu bar icon. Booked sessions get one heads-up, not a floating timer. No ticking clock in the menu bar. |
+| **Quiet UI** | No pop-ups over work except the gate and the Unlock warning, which never takes keyboard focus. Away-time claims wait in the panel, marked by a dot on the menu bar icon. Booked sessions and Unlocks get one notice near the end, not a floating timer. The menu bar shows Unlock and session time in whole minutes, not a ticking clock. |
 | Tighten now, loosen after 24 h | The user is both admin and target. The delay removes impulsive loosening. |
 | launchd LaunchAgent with KeepAlive; **Quit myTime…** needs a reason and a 60 s wait | An instant Quit would unblock everything on impulse, but the user needs a way to turn myTime off, e.g. for a vacation. The reason and the wait keep that deliberate. |
 | SwiftPM + shell script, no Xcode project | A generated `.pbxproj` is fragile for model-written code. SwiftPM is plain text and deterministic. |
@@ -127,7 +137,8 @@ It is for one person, on one Mac (Apple Silicon), installed locally without a de
 |---|---|
 | Not focusing, nothing unlocked, no myTime UI open | **Zero** scheduled timers except the next deadline (day start, pending change). CPU 0.0%. Idle wake-ups ≈ 0. |
 | Focusing | One wake-up every ~30 s (5 s tolerance). |
-| Short countdown on screen (pill, gate, open panel) | 1 Hz UI updates, only while visible. |
+| Short countdown on screen (pill, gate, Unlock warning, open panel) | 1 Hz UI updates, only while visible. |
+| Unlock active, nothing on screen | One menu bar update per minute, plus the end and warning wake-ups. |
 | Memory | < 50 MB memory footprint (the Activity Monitor "Memory" column). Measured after Run 1: 16 MB. |
 
 ### 3.2 Process model and installation
@@ -173,7 +184,7 @@ Result: myTime starts at login and is restarted by launchd within ~5 s after any
 3. `Installer.stopAgent()` (§5.10): delete the plist, `launchctl bootout`, `exit(0)`. Self-heal can't rewrite the plist because the process ends here.
 4. Leave `~/Library/Application Support/myTime/` in place.
 
-**App Nap:** allowed by default. While anything time-critical is live (a gate or focus card is showing, a grant is active, or a booking is active), hold `ProcessInfo.processInfo.beginActivity(options: [.userInitiatedAllowingIdleSystemSleep], reason: "Enforcing app limits")`. End the activity as soon as none of those are true.
+**App Nap:** allowed by default. While anything time-critical is live (a gate or focus card is showing, a grant or an Unlock is active, or a booking is active), hold `ProcessInfo.processInfo.beginActivity(options: [.userInitiatedAllowingIdleSystemSleep], reason: "Enforcing app limits")`. End the activity as soon as none of those are true.
 
 ### 3.3 Package layout
 
@@ -183,9 +194,11 @@ myTime App/
 ├── IMPLEMENTATION_NOTES.md         # appended by each run
 ├── Package.swift
 ├── Packaging/
-│   └── Info.plist
+│   ├── Info.plist
+│   └── AppIcon.icns                # generated by scripts/make-icon.swift, committed
 ├── scripts/
 │   ├── build.sh
+│   ├── make-icon.swift             # developer tool (§10.4), not part of the package
 │   └── uninstall.sh
 ├── Sources/
 │   ├── MyTimeCore/                 # Foundation + CryptoKit only. Pure logic. Fully unit-tested.
@@ -194,6 +207,7 @@ myTime App/
 │   │   │   ├── Settings.swift
 │   │   │   ├── BlockedApp.swift
 │   │   │   ├── AccessGrant.swift
+│   │   │   ├── Unlock.swift            # ActiveUnlock, UnlockStreak, UnlockOption, UnlockQuote
 │   │   │   ├── Booking.swift
 │   │   │   ├── Stats.swift             # DailyStats, WeeklyStats
 │   │   │   ├── HistoryEvent.swift
@@ -204,6 +218,10 @@ myTime App/
 │   │   │   ├── TrustedClock.swift
 │   │   │   ├── CalendarKeys.swift
 │   │   │   ├── FocusAccrual.swift
+│   │   │   ├── UnlockPricing.swift     # the one pricing function (§5.3)
+│   │   │   ├── Unlock.swift            # EngineCore extension: buy, end, finish, warning, gate pause
+│   │   │   ├── UnlockCopy.swift        # Unlock strings (§7)
+│   │   │   ├── Emergency.swift
 │   │   │   ├── BookingRules.swift
 │   │   │   ├── SettingsPolicy.swift
 │   │   │   ├── EnforcementPolicy.swift
@@ -212,7 +230,8 @@ myTime App/
 │   │   │   ├── EngineError.swift
 │   │   │   └── EngineCore.swift        # façade: state + intents + update
 │   │   └── Persistence/
-│   │       └── StateCodec.swift        # HMAC envelope
+│   │       ├── StateCodec.swift        # HMAC envelope
+│   │       └── StateMigration.swift    # schema 1 → 2 (§5.11)
 │   └── MyTimeApp/                  # AppKit + SwiftUI glue and UI
 │       ├── main.swift
 │       ├── MyTimeScene.swift           # SwiftUI App with a MenuBarExtra only
@@ -237,9 +256,12 @@ myTime App/
 │           ├── HoldButton.swift
 │           ├── OverlayPanel.swift      # NSPanel subclass + controller
 │           ├── GateView.swift
+│           ├── UnlockCard.swift        # gate length picker
 │           ├── FocusCardView.swift
 │           ├── PillView.swift
 │           ├── HeadsUpView.swift       # booking 5-minute heads-up
+│           ├── UnlockWarningView.swift # 30-second Unlock warning (+ controller)
+│           ├── UnlockBlock.swift       # panel Unlock row and streak line
 │           ├── BookingView.swift
 │           └── Settings/
 │               ├── SettingsView.swift  # TabView: General, Blocked Apps, Pending, History
@@ -295,7 +317,7 @@ let package = Package(
             │   Enforcer ◀──reconcile───┤──state──▶ StateStore ──▶ state.json (HMAC) │
             │     │ quit/gate/relaunch                                               │
             │     ▼                                                                  │
-            │ NSRunningApplication · OverlayPanel (gate / focus card / pill / heads-up)│
+            │ NSRunningApplication · OverlayPanel (gate/card, pill, heads-up, warning) │
             └────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -334,9 +356,11 @@ let package = Package(
 
 | Timer | Interval | Runs while |
 |---|---|---|
-| Gate/focus card clock (pause countdown, 60 s timeout, emergency wait) | 1 s | gate or focus card visible |
-| Grant countdown (`refresh(.uiTick)`: pill, menu bar label, and `canExtend` all read current time) | 1 s | a running blocked app has an active grant |
+| Gate/focus card clock (pause countdown, 60 s timeout, emergency wait, and `refresh(.uiTick)` so tokens and Unlock prices stay current) | 1 s | gate or focus card visible |
+| Grant countdown (`refresh(.uiTick)`: the pill and menu bar label read current time) | 1 s | a running blocked app has an active grant |
 | Menu bar booking label | 60 s | a booking countdown is shown in the menu bar |
+| Menu bar Unlock label | `Constants.unlockSecondsPerUnit` (60 s; DEV 10 s) | an Unlock is active and no grant countdown is shown |
+| Unlock warning countdown | 1 s | the Unlock warning is visible |
 | Panel refresh (`refresh(.panel)`) | 1 s | menu bar panel open |
 | Settings refresh (`refresh(.panel)`, so "Applies in" and applied changes stay current) | 1 s | Settings window open |
 | Heads-up auto-hide | one-shot 8 s | heads-up visible |
@@ -353,7 +377,7 @@ All types are `Codable`, `Equatable`, and **`public` with explicit `public init`
 
 ```swift
 public struct PersistedState: Codable, Equatable {
-    public var schemaVersion: Int              // 1
+    public var schemaVersion: Int              // 2 (Constants.schemaVersion); 0.1.0 wrote 1 (§5.11)
     public var settings: Settings
     public var pending: [PendingChange]
     public var tokens: Int
@@ -361,12 +385,15 @@ public struct PersistedState: Codable, Equatable {
     public var tokensDayKey: String            // day key the tokens belong to (§5.2 daily reset)
     public var focus: FocusSession?            // nil = not focusing
     public var grants: [AccessGrant]
+    public var unlock: ActiveUnlock?           // the one Unlock, until it's finished (§5.3)
+    public var unlockStreak: UnlockStreak?     // the last finished Unlock, for pricing (§5.3)
     public var bookings: [Booking]
     public var daily: [String: DailyStats]     // key: CalendarKeys.dayKey
     public var weekly: [String: WeeklyStats]   // key: CalendarKeys.weekKey
     public var history: [HistoryEvent]         // newest last, capped (§8.2)
     public var clock: TrustedClockState
     public var tamperNoticeUntil: Date?        // show tamper banner until this time
+    public var migrationNotice: String?        // one-time panel notice after migration (§5.11)
 
     public static func fresh(now: Date, timeZone: TimeZone) -> PersistedState      // defaults, Discord blocked, 0 tokens
     public static func penalized(now: Date, timeZone: TimeZone) -> PersistedState  // §5.7
@@ -387,7 +414,7 @@ public struct Settings: Codable, Equatable {
     public subscript(key: SettingKey) -> Int   // numbers[key.rawValue] ?? key.defaultValue
 }
 
-public enum AccessMode: String, Codable, CaseIterable { case quickLook, reply, booked }
+public enum AccessMode: String, Codable, CaseIterable { case unlock, booked }   // titles: "Unlock", "Sessions"
 
 public struct BlockedApp: Codable, Equatable, Identifiable {
     public var id: UUID
@@ -397,25 +424,59 @@ public struct BlockedApp: Codable, Equatable, Identifiable {
 }
 ```
 
-Default block list (in `PersistedState.fresh`): one entry with `name: "Discord"`, `bundleIDs: ["com.hnc.Discord", "com.hnc.DiscordPTB", "com.hnc.DiscordCanary"]`, `modes: [.quickLook, .reply, .booked]`.
+Default block list (in `PersistedState.fresh`): one entry with `name: "Discord"`, `bundleIDs: ["com.hnc.Discord", "com.hnc.DiscordPTB", "com.hnc.DiscordCanary"]`, `modes: [.unlock, .booked]`.
 
-### 4.3 AccessGrant
+### 4.3 AccessGrant and Unlock
 
 ```swift
-public enum GrantKind: String, Codable { case quickLook, reply, emergency }
+public enum GrantKind: String, Codable { case quickLook, reply, emergency }   // quickLook and reply: only in files from 0.1.0
 
 public struct AccessGrant: Codable, Equatable, Identifiable {
     public var id: UUID
     public var appID: UUID
     public var kind: GrantKind
     public var createdAt: Date
-    public var expiresAt: Date    // createdAt + duration (+ extensions)
+    public var expiresAt: Date    // createdAt + duration
     public var tokensSpent: Int
-    public var note: String?      // reply note or emergency reason
+    public var note: String?      // emergency reason (or a 0.1.0 reply note)
 }
 ```
 
-A grant is **active** while `now < expiresAt`. The remaining time shown is `expiresAt − now`.
+A grant is **active** while `now < expiresAt`. The remaining time shown is `expiresAt − now`. Nothing creates `.quickLook` or `.reply` grants any more; one migrated from 0.1.0 runs until it expires and can't be extended.
+
+```swift
+public struct ActiveUnlock: Codable, Equatable {
+    public var appID: UUID          // the app it was bought from (history only; it covers every .unlock app)
+    public var startedAt: Date
+    public var endsAt: Date         // startedAt + lengthSeconds
+    public var lengthSeconds: Int
+    public var multiplier: Int
+    public var cost: Int
+    public var dayKey: String       // dayKey(startedAt)
+    public var warned: Bool         // the warning was shown or skipped (§5.3)
+    public var endedAt: Date?       // set by endUnlock(); the next update finishes the Unlock
+    public func isActive(at now: Date) -> Bool   // endedAt == nil && now < endsAt
+    public var warningAt: Date { get }           // endsAt − min(unlockWarningLead, lengthSeconds / 2)
+}
+
+public struct UnlockStreak: Codable, Equatable {
+    public var lastMultiplier: Int
+    public var lastEnd: Date        // scheduled end, or when End Unlock was pressed if earlier
+    public var dayKey: String       // day key of that Unlock's purchase
+}
+
+public struct UnlockOption: Equatable {
+    public var units: Int           // 1, 2, 5, 10
+    public var lengthSeconds: Int   // units × unlockSecondsPerUnit
+    public var cost: Int            // units × multiplier
+}
+
+public struct UnlockQuote: Equatable {
+    public var multiplier: Int
+    public var options: [UnlockOption]   // in unlockLengthUnits order
+    public var resetsAt: Date?           // nil when multiplier == 1
+}
+```
 
 ### 4.4 Booking
 
@@ -442,31 +503,40 @@ public struct DailyStats: Codable, Equatable {
     public var tokensEarned: Int = 0
     public var tokensSpent: Int = 0
     public var backedOff: Int = 0
-    public var quickLooks: Int = 0
-    public var replies: Int = 0
     public var claimedAwaySeconds: Double = 0
     public var unclaimedAwaySeconds: Double = 0
+    public var unlocks: Int = 0               // Unlocks bought
+    public var unlockSeconds: Double = 0      // Unlock time actually used (to the purchase day)
+    public var unlockTokens: Int = 0          // tokens spent on Unlocks
+    public var highestMultiplier: Int = 0
 }
 
 public struct WeeklyStats: Codable, Equatable {
     public var emergencyUses: Int = 0
     public var allowanceForfeited: Bool = false   // set by tamper penalty
+    public var unlocks: Int = 0
+    public var unlockSeconds: Double = 0
+    public var unlockTokens: Int = 0
+    public var highestMultiplier: Int = 0
 }
 
 public enum HistoryKind: String, Codable {
     case focusStarted, focusEnded, tokenEarned, dayReset, awayClaimed, quickLook, reply, extended,
          backedOff, bookingCreated, bookingCanceled, bookingEnded, bookingExtended,
          emergency, changeScheduled, changeApplied, changeCanceled, appAdded, appRemoved,
-         tamperDetected
+         tamperDetected, quit, unlockBought, unlockEnded
+    // quickLook, reply, extended: only in history from 0.1.0; kept so old events still decode
 }
 
 public struct HistoryEvent: Codable, Equatable, Identifiable {
     public var id: UUID
     public var date: Date
     public var kind: HistoryKind
-    public var text: String        // pre-rendered line, e.g. "Reply mode in Discord — “reply to Sam in #capstone”"
+    public var text: String        // pre-rendered line, e.g. "Unlock in Discord · 5 min · 2× · 10 ◆"
 }
 ```
+
+`DailyStats` and `WeeklyStats` decode every field with `decodeIfPresent(…) ?? default` (hand-written `init(from:)`, synthesized `encode`), so files missing the Unlock fields still load.
 
 ### 4.6 Settings changes
 
@@ -544,6 +614,8 @@ public enum EngineEffect: Equatable {
     case terminateIfNotAllowed(appID: UUID)
     case bookingStarted(bookingID: UUID)
     case bookingHeadsUp(bookingID: UUID)
+    case unlockWarning
+    case unlockEnded
     case uninstall
 }
 ```
@@ -555,6 +627,8 @@ AppModel handling:
 | `terminateIfNotAllowed` | For each running process of that app: if `!core.isAllowed(appID)`, terminate it (§6.3). |
 | `bookingStarted` | Show the session-start reminder (§7.6). |
 | `bookingHeadsUp` | Show the heads-up panel (§7.6). |
+| `unlockWarning` | Show the Unlock warning (§7.6.1). |
+| `unlockEnded` | Close the Unlock warning if it's showing. |
 | `uninstall` | `Installer.uninstall()`. |
 
 ---
@@ -586,12 +660,14 @@ public struct EngineCore {
     public mutating func confirmClaim()
     public mutating func dismissClaim()
 
-    // Spending
-    public mutating func buyQuickLook(appID: UUID, tokens: Int) throws -> AccessGrant
-    public mutating func buyReply(appID: UUID, note: String) throws -> AccessGrant
-    public func replyUnavailableReason(appID: UUID, note: String) -> EngineError?   // what buyReply would throw, or nil
-    public func canExtend(grantID: UUID) -> Bool
-    public mutating func extendGrant(grantID: UUID) throws
+    // Spending (§5.3)
+    public var activeUnlock: ActiveUnlock? { get }                       // state.unlock if isActive(at: now)
+    public func remaining(of unlock: ActiveUnlock) -> Double             // max(0, endsAt − now)
+    public func unlockQuote(at date: Date) -> UnlockQuote                // prices for an Unlock bought at `date`
+    public func gatePauseSeconds(appID: UUID, at date: Date) -> Int
+    public mutating func buyUnlock(appID: UUID, lengthSeconds: Int, expectedCost: Int) throws -> ActiveUnlock
+    public mutating func endUnlock()
+    public mutating func dismissMigrationNotice()                        // migrationNotice = nil
     public mutating func recordBackedOff(appID: UUID)
     public var emergencyUsesLeftThisWeek: Int { get }
     public mutating func useEmergency(appID: UUID, reason: String) throws -> AccessGrant
@@ -635,19 +711,19 @@ public struct EngineCore {
 
 Every mutation the user would care about appends a `HistoryEvent`.
 
-**Effects come only from `start`, `update`, and the sleep/wake handlers.** Intents never return effects. If an intent causes something that needs a side effect (e.g. `endBooking` should close apps), the follow-up `refresh(.intent)` detects the transition and emits the effect.
+**Effects come only from `start`, `update`, and the sleep/wake handlers.** Intents never return effects. If an intent causes something that needs a side effect (e.g. `endBooking` or `endUnlock` should close apps), the follow-up `refresh(.intent)` detects the transition and emits the effect.
 
 **`update(input)` order:**
 1. Trusted clock (§5.1) → sets `now`
 2. Daily reset (§5.2)
 3. Apply due pending changes (§5.6)
 4. Focus accrual and away (§5.2)
-5. Grant expiry (§5.3)
+5. Grant expiry, then finishing the Unlock, then the Unlock warning (§5.3)
 6. Booking transitions (§5.4)
 7. Pruning, only when the daily reset ran this update (§8.2)
 8. Next wake-up (§5.9)
 
-Effects from steps 5 and 6 are combined in that order, skipping any effect already in the list, so a grant that expires as a session ends closes the app once.
+Effects from steps 5 and 6 are combined in that order, skipping any effect already in the list, so a grant or Unlock that ends as a session ends closes the app once. The daily reset needs no Unlock step: pricing compares day keys.
 
 ### 5.1 Time
 
@@ -697,7 +773,7 @@ if state.tokensDayKey != key:
     mark "reset ran" (enables pruning this update)
 ```
 
-A focus session in progress continues through the reset. Other daily limits need no reset logic because they read `daily[dayKey(now)]`.
+A focus session in progress continues through the reset. An active Unlock runs to its end. Other daily limits need no reset logic because they read `daily[dayKey(now)]`, and the Unlock streak compares day keys (§5.3).
 
 **Launch handling — `start(input)`:**
 
@@ -784,40 +860,93 @@ while progressSeconds >= P:
 
 **Carry-over:** progress is never reset between sessions. Only the daily reset clears it.
 
-### 5.3 Tokens and grants
+### 5.3 Tokens and Unlock
 
-Every grant starts counting when it's created: `expiresAt = now + duration`. There is no launch grace; the gated app relaunches within about a second.
+Tokens buy an **Unlock**: a window of 1, 2, 5, or 10 minutes, chosen at the gate, that covers every blocked app whose modes contain `.unlock`. Only one Unlock exists at a time, so Unlocks never stack. Grants (§4.3) now come only from the emergency pass. Nothing is ever extended, refunded, or renewed automatically.
 
-**buyQuickLook(appID, tokens n):** throws, in this order, if:
+Constants (§8.2): `unlockLengthUnits` `[1, 2, 5, 10]`, `unlockSecondsPerUnit` (60), `unlockStreakGap` (900 s), `unlockWarningLead` (30 s), `unlockWarningMinimum` (5 s), `gatePauseCap` (30 s).
+
+**Pricing (`UnlockPricing`, pure).** This is the only place prices come from. The gate, the panel, the warning, and `buyUnlock` all call it, so the price shown is the price charged.
+
+```swift
+public enum UnlockPricing {
+    public static func multiplier(after previous: UnlockStreak?, at date: Date, dayKey: String) -> Int
+    public static func quote(after previous: UnlockStreak?, at date: Date, dayKey: String, nextDayStart: Date) -> UnlockQuote
+}
+```
+
+```
+multiplier(previous, date, dayKey):
+    if previous != nil && previous.dayKey == dayKey && date − previous.lastEnd < unlockStreakGap:
+        return previous.lastMultiplier × 2          // no cap; it becomes unaffordable on its own
+    return 1
+
+quote(previous, date, dayKey, nextDayStart):
+    m = multiplier(previous, date, dayKey)
+    options = unlockLengthUnits.map { units → (units, units × unlockSecondsPerUnit, units × m) }
+    resetsAt = m > 1 ? min(previous.lastEnd + unlockStreakGap, nextDayStart) : nil
+```
+
+- A gap of exactly `unlockStreakGap` resets to 1×. A new day (§5.1 day key) also starts at 1×, even if the last Unlock ended less than 15 minutes earlier.
+- `previous.dayKey` is the day the previous Unlock was **bought**. An Unlock bought at 3:55 AM that runs past 4:00 AM still belongs to the old day.
+- Booked sessions and emergency passes neither count toward nor reset the streak.
+
+**unlockQuote(at date):** `previous` is the current Unlock if `state.unlock != nil`, as `UnlockStreak(lastMultiplier: multiplier, lastEnd: endedAt ?? endsAt, dayKey: dayKey)`; otherwise `state.unlockStreak`. Day key and next day start are computed at `date`. The gate and panel pass display time, so prices drop back to 1× live when the reset time passes.
+
+**buyUnlock(appID, lengthSeconds, expectedCost):** throws, in this order, if:
 - the app ID is not in the block list → `.unknownApp`
-- the app lacks `.quickLook` → `.modeNotAllowed`
+- the app lacks `.unlock` → `.modeNotAllowed`
 - focus is active → `.focusActive`
-- `n` is not in `1...quickLookMaxTokens` → `.invalidAmount`
-- `tokens < n` → `.notEnoughTokens`
+- `state.unlock != nil` → `.unlockActive`
+- `lengthSeconds` isn't one of the quote's lengths → `.invalidLength`
+- the quote's cost for that length (at `now`) differs from `expectedCost` → `.priceChanged`
+- `tokens < cost` → `.notEnoughTokens`
 
-Otherwise: `tokens -= n`, `today.tokensSpent += n`, `today.quickLooks += 1`. Create a `.quickLook` grant with `duration = n × quickLookSecondsPerToken`. History: `"Quick look in Discord · 1:00 · 2 ◆"`.
+`expectedCost` is what the gate showed. If the price or balance changed while the gate was open (the streak reset, the 4:00 AM reset), nothing is charged and the gate shows the new prices.
 
-**buyReply(appID, note):** `note` is trimmed (whitespace and newlines). Throws, in this order, if:
-- the app ID is not in the block list → `.unknownApp`
-- the app lacks `.reply` → `.modeNotAllowed`
-- focus is active → `.focusActive`
-- `note.count < Constants.minReplyNote /*8*/` → `.noteTooShort`
-- `tokens < replyTokenCost` → `.notEnoughTokens`
-- `today.replies >= replyPerDay` → `.replyLimitReached`
+Otherwise:
+- `tokens -= cost`; today: `tokensSpent += cost`, `unlocks += 1`, `unlockTokens += cost`, `highestMultiplier = max(highestMultiplier, m)`; the same four on this week's `WeeklyStats`.
+- `state.unlock = ActiveUnlock(appID, startedAt: now, endsAt: now + lengthSeconds, lengthSeconds, multiplier: m, cost, dayKey: dayKey(now), warned: false, endedAt: nil)`. The countdown starts now (there is no launch grace) and runs on trusted time through sleep, quitting the app, and myTime restarts.
+- History (`.unlockBought`): `"Unlock in <App> · <short(length)> · <m>× · <cost> ◆"`, followed by `" · <short(gap)> after the last"` when `state.unlockStreak?.dayKey == dayKey(now)`, where `gap = now − state.unlockStreak.lastEnd`. E.g. `"Unlock in Discord · 1 min · 2× · 2 ◆ · 3 min after the last"`.
 
-Otherwise: `tokens -= cost`, `today.tokensSpent += cost`, `today.replies += 1`. Create a `.reply` grant with `duration = replySeconds`, `tokensSpent = cost`, and the trimmed note. History: `"Reply mode in Discord — “<note>”"`.
+**endUnlock():** if `activeUnlock != nil`, set `state.unlock.endedAt = now`. No refund. The follow-up update finishes it, so the streak gap starts now and the next Unlock gets cheaper sooner.
 
-**replyUnavailableReason(appID, note)** returns the error `buyReply` would throw, or `nil`, without changing anything. `buyReply` uses it, and the gate uses it to disable **Open** (§7.3).
+**Finishing** (update step 5, after grant expiry), when `state.unlock` has `endedAt != nil` or `now ≥ endsAt`:
+- `end = min(endedAt ?? endsAt, endsAt)`. If the expiry is processed late (after sleep, after a restart), the scheduled end still counts.
+- `state.unlockStreak = UnlockStreak(lastMultiplier: multiplier, lastEnd: end, dayKey: dayKey)`.
+- `used = end − startedAt`; add it to `unlockSeconds` in `daily[unlock.dayKey]` and `weekly[weekKey(startedAt)]`.
+- History (`.unlockEnded`): `"Unlock ended early · <short(used)> used"` if `endedAt < endsAt`, otherwise `"Unlock ended · <short(used)> used"`.
+- `state.unlock = nil`. Emit `.terminateIfNotAllowed(appID)` for **every** app with `.unlock`, then `.unlockEnded`. Apps a booking still allows stay open (§6.3 checks `isAllowed`).
 
-**Extensions:** `canExtend(grantID)` is true when the grant kind is `.quickLook` or `.reply`, the grant is active, `remaining ≤ Constants.extendWindow /*10 s*/`, and `tokens ≥ 1`. `extendGrant` checks this (throwing `.cannotExtend`), then `expiresAt += quickLookSecondsPerToken`, `tokens -= 1`, `today.tokensSpent += 1`. History: `"Extended Discord · +30 s"`. Emergency grants can't be extended. Nothing ever renews automatically.
+**Warning** (update step 5, after finishing). Let `u = activeUnlock`, `remaining = u.endsAt − now`, `lead = min(unlockWarningLead, u.lengthSeconds / 2)` (so a 1-minute Unlock warns at its halfway point). When `!u.warned && remaining ≤ lead`:
+- `remaining < unlockWarningMinimum` → set `warned = true` and emit nothing (a late wake or relaunch with only seconds left).
+- otherwise, if some app in `runningAppIDs` has `.unlock` and isn't **kept open by a booking**, set `warned = true` and emit `.unlockWarning`.
+- otherwise do nothing yet; a covered app may still be opened before the end.
 
-**Expiry** (update step 5): remove grants with `now ≥ expiresAt`. Emit `.terminateIfNotAllowed(appID)` for each.
+An app is kept open by a booking when it has `.booked` and some booking with `canceledAt == nil` and `endedAt == nil` has `start ≤ u.endsAt < end`. `warned` is saved with the Unlock, so a restart never repeats the warning.
+
+**gatePauseSeconds(appID, at date):** `p = setting(.gatePauseSeconds)`. If the app has `.unlock`: `max(p, min(Constants.gatePauseCap, p × unlockQuote(at: date).multiplier))`. Otherwise `p`. The gate fixes it when it opens. Default: 5 s at 1×, 10 s at 2×, 20 s at 4×, 30 s from 8×.
+
+**Grant expiry** (update step 5): remove grants with `now ≥ expiresAt`. Emit `.terminateIfNotAllowed(appID)` for each.
 
 **recordBackedOff(appID):** `today.backedOff += 1`, history `"Backed off from Discord"`.
 
-**isAllowed(appID)** is true if either:
-- an active grant exists for the app, or
-- `activeBooking != nil` and the app's modes contain `.booked`.
+**isAllowed(appID)** is true if any of:
+- an active grant exists for the app
+- `activeUnlock != nil` and the app's modes contain `.unlock`
+- `activeBooking != nil` and the app's modes contain `.booked`
+
+So turning `.unlock` off for one app during an Unlock (a tightening change, applied at once) closes that app on the next sweep (§6.8), while the Unlock keeps its end time for the others.
+
+**Worked example** (release values):
+
+| Time | Bought | Gap since last ended | Multiplier | Cost | Ends |
+|---|---|---|---|---|---|
+| 2:00 PM | 5 min | — | 1× | 5 | 2:05 PM |
+| 2:08 PM | 5 min | 3 min | 2× | 10 | 2:13 PM |
+| 2:16 PM | 2 min | 3 min | 4× | 8 | 2:18 PM |
+| 2:21 PM | 1 min | 3 min | 8× | 8 | 2:22 PM |
+| 2:40 PM | 5 min | 18 min | 1× | 5 | 2:45 PM |
 
 ### 5.4 Booked sessions (BookingRules)
 
@@ -929,7 +1058,7 @@ return .applied
 - `"Turn on <Mode title> for <App>"`, `"Turn off <Mode title> for <App>"`
 - `"Uninstall myTime"`
 
-Mode titles: quickLook → "Quick look", reply → "Reply mode", booked → "Sessions".
+Mode titles: unlock → "Unlock", booked → "Sessions". Turning Unlock on is loosening (waits the delay); turning it off is tightening (applies now, then the sweep closes apps it no longer covers).
 
 **addAppProblem(bundleID, path, ownBundleID, apps) → String?**, checked in this order:
 1. `bundleID` nil or empty → "That app can't be blocked."
@@ -951,7 +1080,8 @@ Mode titles: quickLook → "Quick look", reply → "Reply mode", booked → "Ses
 ```
 
 - Key: `SymmetricKey(data: SHA256.hash(data: Data("myTime.integrity.v1.7c1e9b4a-5d2f-4e8a-9f61-2b3c4d5e6f70".utf8)))`.
-- `StateCodec.decode(data) -> DecodeResult` returns `.ok(PersistedState)` or `.tampered`, and never throws. It returns `.tampered` for unparseable envelopes, bad base64, bad hex, a MAC mismatch, or payload decode failure. Verify with `HMAC<SHA256>.isValidAuthenticationCode(_:authenticating:using:)`.
+- `StateCodec.decode(data) -> DecodeResult` returns `.ok(PersistedState)`, `.migrated(PersistedState)`, or `.tampered`, and never throws. It returns `.tampered` for unparseable envelopes, bad base64, bad hex, a MAC mismatch, an unknown `schemaVersion`, or payload decode failure. Verify with `HMAC<SHA256>.isValidAuthenticationCode(_:authenticating:using:)`. After the MAC check, a payload with `schemaVersion` 1 is migrated (§5.11) and returned as `.migrated`; 2 is decoded and returned as `.ok`.
+- `StateCodec.seal(_ payload: Data) throws -> Data` (internal) wraps payload bytes in the envelope; `encode` uses it, and tests use it to build schema-1 files.
 - Write with `Data.write(to:options: .atomic)`.
 
 **Load logic (StateStore):**
@@ -959,6 +1089,7 @@ Mode titles: quickLook → "Quick look", reply → "Reply mode", booked → "Ses
 | Situation | Result |
 |---|---|
 | File present, `.ok` | Use it. |
+| File present, `.migrated` | Save it at once (atomic), then use it. Not tamper. |
 | File missing, UserDefaults bool `mytime.initialized` (DEV: `mytime.dev.initialized`) false | `PersistedState.fresh(now: Date())`. Set the sentinel true **after the first successful save**. |
 | File missing but sentinel true | Tamper → penalized state. |
 | File present, `.tampered` | Rename the file to `state.tampered-<unix>.json`, then use the penalized state. |
@@ -967,8 +1098,8 @@ Mode titles: quickLook → "Quick look", reply → "Reply mode", booked → "Ses
 - `tokens = 0`
 - `weekly[thisWeek].allowanceForfeited = true`
 - `weekly[thisWeek].emergencyUses = 99`
-- `daily[today].replies = 99`
 - `daily[today].claimedAwaySeconds = 1_000_000`
+- no Unlock and no streak (as in `fresh`), so the next Unlock costs 1×, once tokens are earned again
 - `tamperNoticeUntil = now + 7 days`
 - history `.tamperDetected`, text `"Saved data was edited outside myTime. Balances were reset."`
 
@@ -1007,6 +1138,8 @@ The earliest of these candidates that is strictly after `now` (overdue items are
 | Candidate | Critical |
 |---|---|
 | `expiresAt` of each active grant | yes |
+| `endsAt` of the active Unlock | yes |
+| `warningAt` of the active Unlock, if `!warned` | no |
 | `start` of each upcoming booking | yes |
 | `end` of the active booking | yes |
 | `end − bookingHeadsUp` of the active booking, if `!warned` and in the future | no |
@@ -1014,7 +1147,7 @@ The earliest of these candidates that is strictly after `now` (overdue items are
 | `nextDayStart` | no |
 | `now + Constants.focusCheckInterval` if `state.focus != nil` or `runtime.awayStartUptime != nil` | no |
 
-Booking starts wake the engine so the start reminder shows on time. Access itself is evaluated when an app is launched or activated, and every refresh updates `now` first.
+Booking starts wake the engine so the start reminder shows on time. Access itself is evaluated when an app is launched or activated, and every refresh updates `now` first. The streak reset needs no wake-up; pricing computes it when a price is shown.
 
 ### 5.10 Quitting (Quit.swift)
 
@@ -1024,6 +1157,24 @@ Booking starts wake the engine so the start reminder shows on time. Access itsel
 3. Append history (`.quit`) `"Quit myTime — “<reason>”"`.
 
 The Quit window (§7.11) runs the `Constants.quitWait` countdown before calling it. Then AppModel saves and calls `Installer.stopAgent()`: remove the LaunchAgent plist, `launchctl bootout gui/<uid>/local.mytime.agent`, `exit(0)`. With the plist gone, nothing restarts myTime (not even a login) until the user opens it from Applications, which runs installer mode (§3) and starts the agent again. Tokens, sessions, and history are kept.
+
+### 5.11 Migration from schema 1 (`StateMigration`, Run 5)
+
+Runs once, on the first launch of 0.2.0, inside `StateCodec.decode` after the MAC check (so a valid old file never looks tampered). `static func migrateV1(_ json: inout [String: Any])` (internal) works on the `JSONSerialization` payload, the only place that knows the schema-1 shape:
+
+1. **Apps:** each app's `modes` becomes `["unlock"]` if it contained `"quickLook"`, plus `"booked"` if it contained `"booked"`. `"reply"` alone doesn't enable Unlock, since that would be a loosening change.
+2. **Pending changes:** a `setMode` with mode `"quickLook"` becomes the same change with mode `"unlock"`, keeping its `id`, `createdAt`, and `applyAt`; its summary becomes `"Turn on Unlock for <App>"`. A `setMode` with mode `"reply"` is dropped. A `setNumber` whose key was removed (§8.1) is dropped. Everything else is kept.
+3. **Settings numbers:** remove `quickLookSecondsPerToken`, `quickLookMaxTokens`, `replyTokenCost`, `replySeconds`, `replyPerDay`.
+4. **Daily stats:** remove `quickLooks` and `replies` (the daily reply count). Lenient decoding (§4.5) fills the Unlock fields.
+5. **Kept as is:** tokens, progress, focus, grants (an active quick look or reply grant runs until it expires and can't be extended), bookings, weekly stats, history (old events keep their labels), clock, tamper notice. No Unlock and no streak, so the first Unlock costs 1×.
+6. **Notice:** `schemaVersion = 2` and `migrationNotice` = the concatenation of:
+   - `"Quick look and Reply mode are now Unlock. Choose 1, 2, 5, or 10 minutes at the gate, 1 token a minute. An Unlock bought less than 15 minutes after the last one costs twice as much."`
+   - for each app that had `"reply"` but not `"quickLook"`: `" Unlock is off for <App> because Quick look was off."`
+   - if one pending change was dropped: `" A pending Quick look or Reply mode change was canceled."`; if `n > 1`: `" <n> pending Quick look or Reply mode changes were canceled."`
+
+The panel shows the notice until **Dismiss** (§7.2). DEV builds show the same text.
+
+Running 0.1.0 after migrating would decode the file as tampered (it doesn't know `"unlock"`). Don't.
 
 ---
 
@@ -1053,8 +1204,9 @@ Add the pid to `terminationPending`, then call `process.terminate()`. After 5 s 
 ### 6.4 Overlay ownership
 
 - **Overlay slot:** at most one gate or focus card at a time. It belongs to a blocked **app** (the app itself is no longer running).
-- **Pill:** at most one. It shows the running blocked app that has an active **grant**, choosing the one with the least remaining time. Booked sessions never show a pill.
-- **Heads-up:** at most one, independent of the other two.
+- **Pill:** at most one. It shows the running blocked app that has an active **grant**, choosing the one with the least remaining time. Unlocks and booked sessions never show a pill.
+- **Heads-up:** at most one, independent of the other overlays.
+- **Unlock warning:** at most one, independent of the others. It closes on `unlockEnded`.
 
 ### 6.5 Gate outcomes
 
@@ -1063,21 +1215,22 @@ Add the pid to `terminationPending`, then call `process.terminate()`. After 5 s 
 | User action | Result |
 |---|---|
 | Never mind / Esc / 60 s of no interaction | Backed off, close the gate. |
-| Quick look / Reply succeeds | Buy (the countdown starts now), close the gate, relaunch the app with `NSWorkspace.shared.openApplication(at: bundleURL, configuration:)` (`activates = true`). The pill appears once the app is running. |
-| Start Focus (0-token state) | Backed off, `core.startFocus()`, close the gate. |
+| Unlock succeeds | Buy with the shown price as `expectedCost` (the countdown starts now), close the gate, relaunch the app about a second later with `NSWorkspace.shared.openApplication(at: bundleURL, configuration:)` (`activates = true`). No pill. |
+| Unlock refused with `.priceChanged` or `.notEnoughTokens` | Nothing is charged. Clear the chosen length and show the error line; the gate stays open with the new prices. |
+| Start Focus (no length affordable) | Backed off, `core.startFocus()`, close the gate. |
 | Book a session… | Backed off, open the Booking window, close the gate. |
-| Emergency flow completes | Same as a successful quick look. |
+| Emergency flow completes | Same as a successful Unlock, except a pill appears once the app is running. |
 | The app is opened again while its gate is up | It's quit quietly (§5.8 rule 3); the gate stays. |
 | Focus becomes active while the gate is open | Swap the gate content to the focus card. |
 
-Any interaction with the gate (click, typing, stepper) resets the 60 s timeout. The timeout is suspended during the emergency wait. Timing out at any other point behaves like Never mind, and an emergency pass not yet used stays unused.
+Any interaction with the gate (click, typing, choosing a length) resets the 60 s timeout. The timeout is suspended during the emergency wait. Timing out at any other point behaves like Never mind, and an emergency pass not yet used stays unused.
 
 ### 6.6 Focus card outcomes
 
 | User action | Result |
 |---|---|
 | Back to work / Esc / 60 s timeout | Backed off, close the card. |
-| End focus… | `core.endFocus()`, then swap to the gate (with the full 5 s pause). |
+| End focus… | `core.endFocus()`, then swap to the gate (with the full pause from `gatePauseSeconds(appID:at:)`). |
 
 ### 6.7 Startup sweep
 
@@ -1103,6 +1256,14 @@ In Settings, if the chosen app is running, the confirmation says it will be clos
   - `sessionStart(date, now, timeZone, locale)`: `"<dayLabel> <timeOfDay>"`, e.g. `"Today 8:05 PM"`. Copy that says `<date, time>` uses this.
   - `historyDay(date, now, timeZone, locale)`: `"Today"`, `"Yesterday"`, or the localized template `"EEEEMMMd"` (`"Thursday, Sep 10"`), by calendar day
 - **Token glyph:** `◆` (U+25C6). Pluralize "token"/"tokens".
+- **Unlock strings (`UnlockCopy`, Core, tested):**
+  - `streakLine(multiplier:resetsAt:timeZone:locale:)` → `"<m>× — resets at <timeOfDay(resetsAt)>"`, e.g. `"4× — resets at 2:28 PM"`
+  - `nextUnlockLine(multiplier:resetsAt:timeZone:locale:)` → `"Next Unlock: <m>× until <timeOfDay(resetsAt)>"`
+  - `unlockButton(lengthSeconds:cost:)` → `"Unlock <short(length)> · <cost> token(s)"`, e.g. `"Unlock 5 min · 10 tokens"`
+  - `needsMore(n)` → `"Needs <n> more"`
+  - `shortOfTokens(needed:lengthSeconds:)` → `"Unlock needs <n> more token(s) for <short(length)>."`
+  - `closesIn(appNames:remaining:)` → one name: `"<App> closes in <clock(remaining)>"`; several: `"Unlocked apps close in <clock(remaining)>"`
+  - `menuBarRemaining(s)` → `short(ceil(s / unlockSecondsPerUnit) × unlockSecondsPerUnit)`, at least one unit, e.g. 241 s → `"5 min"`
 
 ### 7.1 Menu bar label (MenuBarLabel)
 
@@ -1111,6 +1272,7 @@ The label shows an icon plus optional text, with `monospacedDigit()`. Precedence
 | State | Icon | Text | Updates |
 |---|---|---|---|
 | A running blocked app has an active grant | SF Symbol `hourglass` | `clock(least remaining)` | every 1 s |
+| An Unlock is active (whether or not a covered app is running) | SF Symbol `hourglass` | `UnlockCopy.menuBarRemaining(endsAt − now)` | every `unlockSecondsPerUnit` |
 | Active booking and a `.booked` app is running | SF Symbol `hourglass` | `short(end − now)` | every 60 s |
 | Focusing, away | SF Symbol `pause.circle` | `"<tokens>"` | on refresh |
 | Focusing | MenuBarIcon ring (§7.1.1) | `"<tokens>"` | on refresh (~30 s) |
@@ -1132,6 +1294,7 @@ No `DEV ` prefix: on a display with a notch there is no room for it. DEV builds 
 
 1. **Header row:** "myTime" (headline; "myTime · DEV" in DEV builds). On the right, a gear button that opens Settings. If `pending.count > 0`, a small capsule `"<n> pending"` next to it opens Settings on the Pending tab.
 2. **Tamper banner** (only if `now < tamperNoticeUntil`): "Saved data was edited outside myTime, so balances were reset." Secondary style.
+   **Migration notice** (only if `migrationNotice != nil`, §5.11): the notice text (secondary) and a plain button **Dismiss**, which calls `core.dismissMigrationNotice()`.
 3. **Focus block:** FocusRing (160 pt diameter, 10 pt stroke), filled to `(progress + unvested) / P`.
 
    | State | Ring center | Caption | Button |
@@ -1145,6 +1308,10 @@ No `DEV ` prefix: on a display with a notch there is no room for it. DEV builds 
    - HoldButton
    - a plain text button **Dismiss**
 5. **Tokens row:** `◆ <tokens> tokens`, with the secondary caption `"Resets at <hourOfDay(dayStartHour)>"` on the right.
+   **Unlock block** (`UnlockBlock`), with `q = unlockQuote(at: displayNow)`:
+   - During an Unlock: row `"Unlock · <clock(remaining)> left"` with a bordered button **End Unlock** (`core.endUnlock()`, which quits covered apps; no refund). Below it, if `q.multiplier > 1`, `UnlockCopy.nextUnlockLine(q.multiplier, q.resetsAt)` (secondary).
+   - No Unlock and `q.multiplier > 1`: `UnlockCopy.streakLine(q.multiplier, q.resetsAt)` (secondary).
+   - Otherwise nothing.
 6. **Sessions block:**
    - Title "Sessions", with "`short(allowanceRemaining(thisWeek))` left this week" on the right.
    - If a session is active: row "Live · `short(end − now)` left", with **Extend `short(bookingExtensionSeconds)`** (e.g. "Extend 15 min"; only if `canExtendBooking`) and **End**.
@@ -1160,20 +1327,13 @@ No `DEV ` prefix: on a display with a notch there is no room for it. DEV builds 
 - App icon (64 pt, from `NSWorkspace.shared.icon(forFile: bundleURL.path)`).
 - Title: **"Still want to open <App>?"**
 - Subtitle: `"<n> tokens · 1 token = <short(P)> of focus"` (e.g. "15 min"; "15 s" in DEV).
-- **Pause phase** (`gatePauseSeconds`, default 5 s): a thin ring drains linearly around the icon, labeled `"Options unlock in <s>s"`. Everything except **Never mind** is disabled.
-- **Choose phase:** show only the rows whose mode is enabled for the app.
-  - **Quick look** card:
-    - title "Quick look"
-    - detail `"<quickLookSecondsPerToken> s per token"`
-    - stepper `– n +` (1…min(quickLookMaxTokens, tokens))
-    - button **"Open for `clock(n × sec)` · n ◆"**
-  - **Reply mode** card:
-    - title "Reply mode"
-    - detail `"<replySeconds in min> min · <cost> ◆ · <left> of <perDay> left today"`
-    - text field, placeholder "What are you here to do?"
-    - button **"Open"**
-    - When disabled, one secondary line shows the reason from `replyUnavailableReason`: `.noteTooShort` → "Write at least 8 characters", `.notEnoughTokens` → "Needs <cost> tokens" ("token" when the cost is 1), `.replyLimitReached` → "No replies left today".
-  - **If tokens == 0 and quick look or reply is enabled:** replace those cards with the text "No tokens yet. Your next one is `short(secondsToNextToken)` of focus away." and the button **Start Focus**.
+- **Pause phase** (`core.gatePauseSeconds(appID:at: displayNow)`, fixed when the gate opens: 5 s by default, growing with the Unlock streak up to 30 s, §5.3): a thin ring drains linearly around the icon, labeled `"Options unlock in <s>s"`. Everything except **Never mind** is disabled, but the Unlock lengths and prices are already visible.
+- **Choose phase:** show only the rows whose mode is enabled for the app. While the gate is open its clock refreshes the engine every second (§3.6), so the balance and prices stay current.
+  - **Unlock card** (`UnlockCard`, if `.unlock` is enabled), with `q = core.unlockQuote(at: displayNow)`:
+    - Header: "Unlock" (headline). On the right, if `q.multiplier > 1`, `UnlockCopy.streakLine(q.multiplier, q.resetsAt)` (secondary), e.g. after the 2:13 PM Unlock ends: "4× — resets at 2:28 PM".
+    - **Lengths:** four equal buttons, one per `q.options` entry, each with two lines: `short(lengthSeconds)` and, below, `"<cost> ◆"` if `cost ≤ tokens`, otherwise `UnlockCopy.needsMore(cost − tokens)`. Unaffordable lengths are disabled. **Nothing is preselected**, so every Unlock is an explicit choice. The chosen length is marked with the accent tint (a bordered style, not prominent). If the chosen length becomes unaffordable, the choice is cleared.
+    - **Unlock button** (bordered, full width): `"Choose a length"` (disabled) until a length is chosen, then `UnlockCopy.unlockButton(length, cost)` for the current quote, e.g. **"Unlock 5 min · 10 tokens"**. It buys with that quote's `lengthSeconds` and `cost` as `expectedCost`.
+    - **No length affordable** (the shortest option costs more than `tokens`): replace the length buttons and the Unlock button with `UnlockCopy.shortOfTokens(needed: shortest.cost − tokens, lengthSeconds: shortest.lengthSeconds)`, the line `"Your next token is <short(secondsToNextToken)> of focus away."`, and the button **Start Focus**. The header's streak line stays, showing when the price drops.
   - **Sessions line** (if `.booked` is enabled):
     - with an upcoming booking: "Next session: `sessionStart(start)`"
     - otherwise: "Sessions: none booked" plus a link-style button **Book a session…**
@@ -1186,9 +1346,20 @@ No `DEV ` prefix: on a display with a notch there is no room for it. DEV builds 
 **Emergency sub-flow** (replaces the choose-phase content):
 1. Title "Emergency access", body "Once a week. After a <wait>-second wait you'll get <access in min> minutes." ("minute" when it's 1). Text field placeholder "What's the emergency?" Buttons **Start wait** (enabled once the trimmed reason has ≥ 15 characters) and **Back** (returns to the choose phase).
 2. Waiting: large `"Opening in <s>s"` and button **Cancel**, captioned "Your pass won't be used." Cancel returns to step 1 with the reason kept.
-3. Ready: button **"Open <App> for <access in min> min"**. This calls `useEmergency`; on success, same behavior as a quick look.
+3. Ready: button **"Open <App> for <access in min> min"**. This calls `useEmergency`; on success, the app relaunches as after an Unlock (§6.5).
 
 **Never mind** is the only prominent button in the gate. The panel grows and shrinks with its content and keeps its top edge (NSHostingView does this by default; verified).
+
+**Gate states** (summary):
+
+| State | Shows |
+|---|---|
+| Pause | Lengths and prices (disabled), token balance, streak line if above 1×; only **Never mind** works |
+| Ready | Lengths, Unlock button, sessions line, Emergency, Never mind |
+| Some lengths unaffordable | Those lengths disabled, labeled "Needs <n> more" |
+| No length affordable | Tokens needed for the shortest length, next-token line, **Start Focus**, streak line if above 1× |
+| Focusing | The focus card (§7.4); no prices |
+| Unlock not enabled for this app | No Unlock card; sessions line, Emergency, Never mind |
 
 Errors thrown by core intents appear as one secondary line under the relevant card, using `EngineError.userMessage`.
 
@@ -1198,14 +1369,13 @@ Errors thrown by core intents appear as one secondary line under the relevant ca
 - Body: `"<short(secondsToNextToken)> to your next token."`
 - Buttons: **Back to work** (prominent) and **End focus…**. Esc = Back to work.
 
-### 7.5 Countdown pill (OverlayPanel, non-activating, not key) — grants only
+### 7.5 Countdown pill (OverlayPanel, non-activating, not key) — grants only (emergency, and quick look or reply grants left from 0.1.0)
 
 - Position: top-right of the main screen's `visibleFrame`, 12 pt inset, or wherever the user last dragged it (stored in UserDefaults `mytime.pillOrigin`, used only if still on a connected screen). Capsule, ~220×44 pt.
 - Content: app icon (18 pt) + text.
   - `"<App> · clock(remaining)"`
   - for emergency grants: `"Emergency · clock(remaining)"`
-- **Reply grants:** a second line with the note in quotes, truncated to one line (the pill grows to ~60 pt).
-- **Last 10 s:** the text and icon tint cross-fade to the warm color (0.3 s). No pulsing or scaling. If `canExtend`, show a button **"+<quickLookSecondsPerToken> s · 1 ◆"**.
+- **Last 10 s:** the text and icon tint cross-fade to the warm color (0.3 s). No pulsing or scaling. There is no extend button; nothing can be extended.
 - Hidden when no running blocked app has an active grant.
 
 ### 7.6 Session notices (OverlayPanel, non-activating, top-right like the pill, width 260)
@@ -1219,6 +1389,15 @@ Errors thrown by core intents appear as one secondary line under the relevant ca
 - Text: `"Session ends in <short(end − now)>"` (e.g. "Session ends in 5 min"). Button **Extend `short(bookingExtensionSeconds)`** if `canExtendBooking`, otherwise no button.
 - Placement: 12 pt inside the top-right of the main screen's `visibleFrame`, or 8 pt below the pill if the pill is showing.
 - Both notices use the same placement, auto-hide after 8 s, and clicking outside does nothing. A new notice replaces a visible one.
+- Booked sessions keep this 5-minute heads-up; the Unlock warning below is separate.
+
+#### 7.6.1 Unlock warning (`UnlockWarningController`, OverlayPanel, non-activating, **not key**, width 260)
+
+Shown on the `unlockWarning` effect (Core already checked that a covered app is running and no booking keeps it open, §5.3). It never takes keyboard focus, so typing in the app continues.
+- Title (headline): `UnlockCopy.closesIn(appNames:remaining:)` with the names of running blocked apps that have `.unlock`, e.g. "Discord closes in 0:30". It counts down every second while visible (§3.6).
+- Below (secondary), with `q = unlockQuote(at: displayNow)`: `UnlockCopy.nextUnlockLine(q.multiplier, q.resetsAt)` (always above 1× during an Unlock).
+- Button **End now** (bordered): `model.endUnlock()`. No extend button.
+- Placement: as the heads-up (§7.6), 8 pt below the pill if one shows. No auto-hide; it closes on `unlockEnded` or **End now**. Clicking outside does nothing.
 
 ### 7.7 HoldButton and claim behavior
 
@@ -1257,7 +1436,7 @@ Open it with `WindowRouter.showSettings(tab:)` from the panel gear, the pending 
 - Apply submits each changed key, then shows an alert titled "Settings updated" listing `"Applied now: …"` and `"Applies <date, time>: …"` lines.
 
 **Blocked Apps tab**
-- Rows: icon, name, and three toggles: "Quick look", "Reply mode", "Sessions".
+- Rows: icon, name, and two toggles: "Unlock", "Sessions".
   - Turning a toggle **on** shows an alert "This loosens myTime" / "It will apply <date, time>." with **Schedule** and **Cancel**. Turning one **off** applies immediately.
   - A toggle with a pending change shows a small clock badge with the tooltip "On <date, time>".
 - **Remove…** per row shows the same loosening alert, then schedules. A row with a pending removal shows "Removal <date, time>".
@@ -1271,7 +1450,7 @@ Open it with `WindowRouter.showSettings(tab:)` from the panel gear, the pending 
     - it's already in the list → "<App> is already blocked."
   - If the app is running, confirm first: "<App> is running and will be closed." with **Add** and **Cancel**.
   - Check with `SettingsPolicy.addAppProblem(bundleID:path:ownBundleID: Bundle.main.bundleIdentifier, apps:)` and show its message.
-  - A new entry is `BlockedApp(name: url.deletingPathExtension().lastPathComponent, bundleIDs: [bundleID], modes: [.quickLook, .reply, .booked])`. Adding is tightening, so it applies immediately.
+  - A new entry is `BlockedApp(name: url.deletingPathExtension().lastPathComponent, bundleIDs: [bundleID], modes: [.unlock, .booked])`. Adding is tightening, so it applies immediately.
 
 **Pending tab**
 - List rows: summary, "Applies in `short(applyAt − now)`", **Cancel**. Empty state: "No pending changes."
@@ -1282,7 +1461,7 @@ Open it with `WindowRouter.showSettings(tab:)` from the panel gear, the pending 
 
 ### 7.10 Error copy (`EngineError.userMessage`)
 
-Cases that carry values: `invalidAmount(max:)`, `bookingTooSoon(leadSeconds:)`, `invalidDuration(minSeconds:maxSeconds:)`.
+Cases that carry values: `bookingTooSoon(leadSeconds:)`, `invalidDuration(minSeconds:maxSeconds:)`. Run 5 removes `invalidAmount`, `noteTooShort`, `replyLimitReached`, and `cannotExtend`.
 
 | Case | Message |
 |---|---|
@@ -1290,11 +1469,10 @@ Cases that carry values: `invalidAmount(max:)`, `bookingTooSoon(leadSeconds:)`, 
 | `unknownGrant` | "That access has already ended." |
 | `modeNotAllowed` | "That option is turned off for this app." |
 | `focusActive` | "End your focus session first." |
-| `invalidAmount` | "Choose between 1 and <max> tokens." |
 | `notEnoughTokens` | "Not enough tokens." |
-| `noteTooShort` | "Write at least 8 characters." |
-| `replyLimitReached` | "No replies left today." |
-| `cannotExtend` | "Can't extend right now." |
+| `unlockActive` | "An Unlock is already running." |
+| `invalidLength` | "Choose one of the listed lengths." |
+| `priceChanged` | "The price changed. Choose again." |
 | `reasonTooShort` | "Write at least 15 characters." |
 | `emergencyUnavailable` | "Emergency access used · resets Monday." |
 | `bookingTooSoon` | "Book at least `short(lead)` ahead." |
@@ -1328,11 +1506,6 @@ Cases that carry values: `invalidAmount(max:)`, `bookingTooSoon(leadSeconds:)`, 
 | `idleThresholdSeconds` | Pause after no activity | Earning | 300 | 20 | 60–1800 | higher |
 | `awayClaimSecondsPerDay` | Away time you can count per day | Earning | 1800 | 60 | 0–7200 | higher |
 | `autoEndAwaySeconds` | End focus after away for | Earning | 1800 | 60 | 600–7200 | higher |
-| `quickLookSecondsPerToken` | Quick look per token | Spending | 30 | 30 | 10–300 | higher |
-| `quickLookMaxTokens` | Max tokens per quick look | Spending | 3 | 3 | 1–10 | higher |
-| `replyTokenCost` | Reply mode cost | Spending | 2 | 2 | 1–10 | lower |
-| `replySeconds` | Reply mode length | Spending | 180 | 60 | 60–900 | higher |
-| `replyPerDay` | Reply mode uses per day | Spending | 3 | 3 | 0–10 | higher |
 | `gatePauseSeconds` | Gate pause | Spending | 5 | 5 | 0–30 | lower |
 | `weeklyAllowanceSeconds` | Session time per week | Sessions | 18000 | 1200 | 0–72000 | higher |
 | `bookingLeadSeconds` | Book at least this far ahead | Sessions | 600 | 60 | 0–86400 | lower |
@@ -1343,11 +1516,19 @@ Cases that carry values: `invalidAmount(max:)`, `bookingTooSoon(leadSeconds:)`, 
 | `emergencyAccessSeconds` | Emergency access length | Emergency | 600 | 60 | 60–3600 | higher |
 | `looseningDelaySeconds` | Delay for loosening changes | Safety | 86400 | 60 | 3600–604800 | lower |
 
+Run 5 removed `quickLookSecondsPerToken`, `quickLookMaxTokens`, `replyTokenCost`, `replySeconds`, and `replyPerDay` (§5.11). Unlock lengths, price, streak gap, and warning time are fixed constants, not settings, so they add no new way to loosen limits.
+
 ### 8.2 Constants (not user-configurable; `Constants.swift`)
 
 | Name | Release | DEV |
 |---|---|---|
-| `extendWindow` | 10 s | 10 s |
+| `schemaVersion` | 2 | 2 |
+| `unlockLengthUnits` | [1, 2, 5, 10] | [1, 2, 5, 10] |
+| `unlockSecondsPerUnit` | 60 | 10 |
+| `unlockStreakGap` | 900 s | 30 s |
+| `unlockWarningLead` | 30 s | 5 s |
+| `unlockWarningMinimum` | 5 s | 2 s |
+| `gatePauseCap` | 30 s | 30 s |
 | `focusCheckInterval` | 30 s | 5 s |
 | `bookingHeadsUp` | 300 s | 30 s |
 | `bookingMinSeconds` | 1800 | 60 |
@@ -1364,7 +1545,6 @@ Cases that carry values: `invalidAmount(max:)`, `bookingTooSoon(leadSeconds:)`, 
 | `clockJumpTolerance` | 120 s | 120 s |
 | `criticalWakeTolerance` | 1 s | 1 s |
 | `normalWakeTolerance` | 5 s | 5 s |
-| `minReplyNote` | 8 chars | 8 chars |
 | `minEmergencyReason` | 15 chars | 15 chars |
 | `minQuitReason` | 15 chars | 15 chars |
 | `historyCap` | 500 events | 500 events |
@@ -1423,7 +1603,8 @@ Cases that carry values: `invalidAmount(max:)`, `bookingTooSoon(leadSeconds:)`, 
 | `CFBundleName` / `CFBundleDisplayName` | `myTime` |
 | `CFBundleExecutable` | `myTime` |
 | `CFBundlePackageType` | `APPL` |
-| `CFBundleShortVersionString` / `CFBundleVersion` | `0.1.0` / `1` |
+| `CFBundleShortVersionString` / `CFBundleVersion` | `0.2.0` / `2` (Run 5) |
+| `CFBundleIconFile` | `AppIcon` (Run 5) |
 | `LSMinimumSystemVersion` | `14.0` |
 | `LSUIElement` | `true` |
 | `NSHighResolutionCapable` | `true` |
@@ -1446,6 +1627,7 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN_DIR/myTime" "$APP/Contents/MacOS/myTime"
 cp Packaging/Info.plist "$APP/Contents/Info.plist"
+cp Packaging/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 codesign --force --sign - "$APP"
 
 launchctl bootout "gui/$(id -u)/local.mytime.agent" 2>/dev/null || true
@@ -1460,7 +1642,7 @@ echo "myTime installed ($MODE)."
 
 ### 10.3 DEV builds (`#if DEV_TIMESCALE`)
 
-- DEV defaults and constants from §8.
+- DEV defaults and constants from §8. For Unlock: 10, 20, 50, and 100-second lengths, a 30-second streak gap, and a 5-second warning (not shown under 2 s left). The rules are the same as release.
 - Data file `state-dev.json` and sentinel `mytime.dev.initialized`.
 - "myTime · DEV" panel title (§7.2).
 - Panel debug row (§7.2):
@@ -1469,6 +1651,16 @@ echo "myTime installed ($MODE)."
   - "New day" (`devSimulateNewDay` + refresh)
   - "Reset state" (writes `fresh`)
 - `--foreground` launch flag is honored.
+
+### 10.4 App icon (`scripts/make-icon.swift`, Run 5)
+
+A developer tool, run as `swift scripts/make-icon.swift <outDir>`; it isn't part of the package and uses only AppKit/CoreGraphics. It writes `AppIcon.iconset` with the ten standard files (`icon_16x16.png` through `icon_512x512@2x.png`), each drawn at its own pixel size, then runs `/usr/bin/iconutil -c icns`. Only `Packaging/AppIcon.icns` is committed.
+
+Design, on a 1024 canvas:
+- the macOS icon grid: an 824 pt rounded square, centered, corner radius 185, with a soft drop shadow (y −12, blur 28, black at 30%)
+- fill: a vertical gradient from the dark-mode accent `#5BC0B2` (top) to the light-mode accent `#2F8F83` (bottom)
+- center: a white ring (diameter 520, stroke 64) and, inside it with a 36 pt gap, a white pie wedge from 12 o'clock clockwise through 270°, echoing the menu bar ring (§7.1.1)
+- at 16 and 32 px: no gap and a thicker stroke, so the ring stays readable
 
 ---
 
@@ -1494,7 +1686,7 @@ Build `EngineCore` with fixed dates and feed synthetic `UpdateInput`s. Each run 
 - Crossing the day start clears tokens and progress and records history once.
 - A start after an overnight downtime clears yesterday's tokens.
 - A focus session continues across the reset.
-- Reply limit and claim budget are fresh on the new day.
+- The claim budget is fresh on the new day.
 
 **Launch handling**
 - Focus active and downtime > idle threshold → focus ended, no credit.
@@ -1511,13 +1703,54 @@ Build `EngineCore` with fixed dates and feed synthetic `UpdateInput`s. Each run 
 - `claimableSeconds` respects the daily budget. `confirmClaim` vests and clears unclaimed. `dismissClaim` clears without vesting.
 
 **Grants**
-- Quick look cost/duration and all error cases.
-- Reply note trim/length, cost, daily limit.
-- The countdown starts at purchase (`remaining` equals the full duration right after buying).
-- Extension only within the last 10 s, and it consumes a token.
-- Emergency grants can't be extended.
+- The countdown starts when the grant is created (`remaining` equals the full duration right after).
 - Expiry emits `terminateIfNotAllowed`.
 - `isAllowed` with a grant, with a booking + `.booked`, and with a booking without `.booked`.
+
+**Unlock pricing** (`UnlockPricingTests`)
+- First Unlock of the day: 1×, costs 1, 2, 5, 10.
+- 14 min 59 s after the previous one ended → 2×; exactly 15 min → 1×.
+- Doubling has no cap.
+- A different purchase day → 1×.
+- `resetsAt` is the end plus the gap, capped at the next day start.
+
+**Unlock** (`UnlockTests`)
+- Buying spends tokens, records stats and history, and covers every `.unlock` app but no other.
+- Error order.
+- The worked example in §5.3 (costs 5, 10, 8, 8, 5).
+- History notes the gap since the last Unlock.
+- Expiry quits every covered app, emits `unlockEnded`, and records the streak at the scheduled end.
+- End Unlock: no refund; the gap starts at once (a 10-minute Unlock bought at 2:00, ended at 2:02, gives 1× at 2:18).
+- Bought at 3:55 AM, next at 4:10 AM → 1×.
+- A 4:00 AM reset while the gate is open → purchase refused, tokens 0.
+- A price that changed since it was shown → `.priceChanged`, nothing charged.
+- Ends during sleep: apps quit at wake; the gap counts from the scheduled end.
+- A restart keeps the same end.
+- A wall clock jump doesn't shorten it.
+- A booking covering the end keeps its apps open, with no warning; the streak still starts at the Unlock's end.
+- Turning Unlock off for one app keeps the others.
+- Focus can start during an Unlock.
+- Gate pause: 5, 10, 20, 30, 30 s at 1×, 2×, 4×, 8×, 16×; 5 s for apps without `.unlock`.
+
+**Unlock warning** (`UnlockWarningTests`)
+- Once, 30 s before the end, with a covered app running.
+- Waits for a covered app to run.
+- A restart doesn't repeat it.
+- A wake with 3 s left shows no warning; apps quit at the end.
+- A 40 s Unlock warns at its halfway point.
+- Wake-ups: the warning (non-critical), then the end (critical).
+
+**Unlock copy** (`UnlockCopyTests`): every `UnlockCopy` string in §7.
+
+**Migration** (`MigrationTests`)
+- Quick look and Reply enabled → Unlock enabled; tokens and stats carried over; the base notice.
+- Reply only → Unlock off, with the per-app notice line.
+- A pending Quick look enable due in 6 hours → a pending Unlock enable due in 6 hours.
+- Pending Reply changes and removed setting changes are dropped and counted.
+- Removed setting numbers are dropped.
+- An active legacy grant keeps running.
+- A current file decodes as `.ok`; an unknown version is `.tampered`.
+- The notice can be dismissed.
 
 **BookingRules**
 - Each validation error (lead of 10 min: 9 min ahead fails, 10 min ahead passes).
@@ -1568,7 +1801,7 @@ Build `EngineCore` with fixed dates and feed synthetic `UpdateInput`s. Each run 
 - Round trip.
 - Flipping one payload byte → `.tampered`.
 - Garbage → `.tampered`.
-- `penalized` has 0 tokens, forfeited allowance, and no emergency left.
+- `penalized` has 0 tokens, forfeited allowance, no emergency left, and no Unlock or streak.
 
 **EnforcementPolicy**
 - A table test covering all 7 rules.
@@ -1580,7 +1813,7 @@ Build `EngineCore` with fixed dates and feed synthetic `UpdateInput`s. Each run 
 
 ### 11.2 Manual test checklist (`docs/MANUAL_TESTS.md`)
 
-Each run appends its steps, run against `scripts/build.sh --dev`. Each step states its expected result.
+Each run appends its steps, run against `scripts/build.sh --dev`. Each step states its expected result. From Run 5 on, steps 6 (quick look) and 16 (reply mode) no longer apply, and step 4's "No tokens yet…" text is the Unlock card's "Unlock needs 1 more token for 10 s." (DEV); steps 26–30 cover Unlock instead.
 
 **Run 1**
 1. **Install:** the menu bar shows `◆ 0` and the panel title says "myTime · DEV". `launchctl print gui/$(id -u)/local.mytime.agent` shows the job running.
@@ -1637,11 +1870,21 @@ Each run appends its steps, run against `scripts/build.sh --dev`. Each step stat
 24. **File tamper:** edit one character in `state-dev.json`, then kickstart the agent → tokens are 0 and the tamper banner shows.
 25. **Uninstall:** schedule uninstall → after ~1 minute myTime leaves the menu bar and is not relaunched, and `/Applications/myTime.app` is in the Trash.
 
+**Run 5**
+26. **Unlock gate:** press "+1 token" 6 times, open Discord. The lengths 10 s, 20 s, 50 s, 100 s show their prices but stay disabled for 5 s; nothing is preselected and the button reads "Choose a length". Pick 20 s → "Unlock 20 s · 2 tokens". Buy → Discord relaunches, no pill shows, and the menu bar shows the hourglass and "20 s".
+27. **Warning:** type in Discord during an Unlock. At 5 s left, "Discord closes in 0:05" appears top-right and typing still goes to Discord. **End now** quits Discord at once.
+28. **Streak:** reopen Discord within 30 s of the end → the pause is 10 s, prices are doubled, and the card header reads "2× — resets at …". Choose a length and keep the gate open past that time → the prices and the Unlock button drop to 1× without closing the gate.
+29. **Panel:** during an Unlock the panel shows "Unlock · 0:15 left", **End Unlock**, and "Next Unlock: 2× until …". **End Unlock** quits Discord.
+30. **Restart:** during an Unlock, `launchctl kickstart -k gui/$(id -u)/local.mytime.agent` → the same end time; a warning already shown doesn't show again; at the end Discord quits.
+31. **Migration:** with a `state-dev.json` written by 0.1.0 (Quick look on), install the DEV build → no tamper banner, tokens unchanged, the migration notice shows in the panel, and Settings shows Unlock on for Discord. **Dismiss** removes it for good.
+32. **Settings:** Blocked Apps shows "Unlock" and "Sessions". Turning Unlock on shows the loosening alert. With TextEdit blocked with Unlock and an Unlock running, turning Unlock off for TextEdit quits it at once; Discord stays open until the end.
+33. **Icon:** `/Applications/myTime.app` shows the new icon in Finder and Get Info (if Finder shows a blank icon, `touch /Applications/myTime.app`).
+
 ---
 
 ## 12. Runs (build in order; each run leaves a working app)
 
-**Status:** Runs 1–4 are complete and committed. Their plans in `docs/superpowers/plans/` are historical. The sections below record each run's scope.
+**Status:** Runs 1–4 are complete and committed. Their plans in `docs/superpowers/plans/` are historical. Run 5 is specified and not built. The sections below record each run's scope.
 
 After each run: `swift build` and `swift test` pass, `scripts/build.sh --dev` installs, that run's manual steps pass, and `IMPLEMENTATION_NOTES.md` has a `## Run N` section. The reviewer then reviews, fixes, and commits before the next run starts. Later runs may extend earlier files; they must not rewrite working code without reason.
 
@@ -1707,6 +1950,23 @@ After each run: `swift build` and `swift test` pass, `scripts/build.sh --dev` in
 
 **Manual:** steps 20–25, then re-run steps 1–7 against a release build (`scripts/build.sh`).
 
+### Run 5 — Unlock (0.2.0)
+
+**Plan:** `docs/superpowers/plans/2026-10-24-run-5-unlock.md`. Tasks in order; the icon can be built alongside the others.
+
+**Core:** `ActiveUnlock`, `UnlockStreak`, `UnlockPricing`, buy/end/finish/warning, gate pause, Unlock stats and history, wake-ups, `UnlockCopy`. Then remove Quick look, Reply mode, and extensions; schema 2 and `StateMigration`.
+
+**App:**
+- gate Unlock card with the length picker; streak pause; the gate clock refreshes the engine
+- Unlock warning
+- menu bar Unlock row, panel Unlock block, migration notice
+- remove the Quick look and Reply cards, the extend button, and the pill's note line; "Unlock" toggle in Blocked Apps
+- app icon (`scripts/make-icon.swift`, `Packaging/AppIcon.icns`)
+
+**Tests:** Unlock pricing, Unlock, Unlock warning, Unlock copy, Migration; Quick look, Reply, and extension tests removed.
+
+**Manual:** steps 26–33, then a day on DEV and a week on release. After two weeks, use the Unlock history to revisit the lengths, the 15-minute gap, and a possible booking top-up (tokens buying extra session minutes at 2 minutes per token, up to 1 hour a week), which is not part of Run 5.
+
 ---
 
 ## 13. Hard rules and pitfalls
@@ -1721,7 +1981,7 @@ After each run: `swift build` and `swift test` pass, `scripts/build.sh --dev` in
 8. **Match blocked processes by exact bundle ID** and `.regular` activation policy.
 9. **Terminate politely first,** then force after 5 s.
 10. **No instant Quit.** The only way to quit is the Quit window (§7.11), with its reason and wait. No "pause blocking" feature.
-11. **Never auto-renew** grants or bookings.
+11. **Never auto-renew** grants, Unlocks, or bookings. Unlocks have no extensions and no refunds.
 12. Idle seconds: `CGEventSource.secondsSinceLastEventType(.hidSystemState, eventType: CGEventType(rawValue: ~0)!)` (hardware input only, so "mouse jiggler" apps don't count). Screen lock: `CGSessionCopyCurrentDictionary()` key `"CGSSessionScreenIsLocked"` present and true.
 13. **Persist** at the end of any refresh that changed state, and on `willPowerOff`, `willSleep`, and `applicationWillTerminate`. Always use atomic writes.
 14. **Keep files focused** (roughly ≤ 300 lines). Put logic in Core; views stay declarative.
@@ -1738,9 +1998,10 @@ After each run: `swift build` and `swift test` pass, `scripts/build.sh --dev` in
 - Multiple users, accounts, sync, cloud
 - System notifications
 - Per-app prices
-- Charts and weekly reports beyond the History tab
-- A custom app icon
+- Charts and weekly reports beyond the History tab (Unlock stats are stored, not shown)
 - Localization
+- Booking top-up with tokens (a possible later run, §12 Run 5)
+- Per-app Unlocks (one Unlock covers every app with the mode)
 
 **Known bypasses** (accepted; each needs a deliberate, multi-step action):
 - Terminal: `launchctl bootout`, `scripts/uninstall.sh`, rebuilding with `--dev`, or editing the source.
