@@ -346,3 +346,9 @@ After the pill tint correction, reran the exact final pipeline above (same log p
 ### Task 6 whole-run code review (Claude)
 
 Read the full `main..run-5-unlock` source diff for how the tasks fit together: update order (grant expiry → finish Unlock → warning → bookings), wake-ups (past candidates are filtered, so a skipped warning can't loop), coverage of every Unlock-enabled app, early End Unlock, the save exception, the menu bar/pill/warning timers against §3.6, gate pause and price refresh, and Settings removals enforced by the sweep. No code findings. Manual step 31 now allows for the day reset clearing tokens when the old DEV file is from an earlier day. The DEV manual checks (26–33) remain.
+
+### Task 6 DEV manual checks
+
+- 31 (Claude): the 0.1.0 `state-dev.json` decoded as `.migrated` and was saved as schema 2 on first launch. No tamper notice, all 151 history events kept, Discord has Unlock + Sessions, notice set.
+- 33 (Claude): Finder shows the new icon for `/Applications/myTime.app`.
+- 26–30, 32 (the user): all passed. Computer use couldn't reach myTime's windows (menu-bar-only app), so the user ran these.
