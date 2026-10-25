@@ -16,6 +16,8 @@ public struct PersistedState: Codable, Equatable {
     public var tokensDayKey: String
     public var focus: FocusSession?
     public var grants: [AccessGrant]
+    public var unlock: ActiveUnlock?
+    public var unlockStreak: UnlockStreak?
     public var bookings: [Booking]
     public var daily: [String: DailyStats]
     public var weekly: [String: WeeklyStats]
@@ -25,7 +27,8 @@ public struct PersistedState: Codable, Equatable {
     public init(
         schemaVersion: Int = Constants.schemaVersion, settings: Settings, pending: [PendingChange] = [],
         tokens: Int = 0, progressSeconds: Double = 0, tokensDayKey: String, focus: FocusSession? = nil,
-        grants: [AccessGrant] = [], bookings: [Booking] = [], daily: [String: DailyStats] = [:],
+        grants: [AccessGrant] = [], unlock: ActiveUnlock? = nil, unlockStreak: UnlockStreak? = nil,
+        bookings: [Booking] = [], daily: [String: DailyStats] = [:],
         weekly: [String: WeeklyStats] = [:], history: [HistoryEvent] = [],
         clock: TrustedClockState = TrustedClockState(), tamperNoticeUntil: Date? = nil
     ) {
@@ -37,6 +40,8 @@ public struct PersistedState: Codable, Equatable {
         self.tokensDayKey = tokensDayKey
         self.focus = focus
         self.grants = grants
+        self.unlock = unlock
+        self.unlockStreak = unlockStreak
         self.bookings = bookings
         self.daily = daily
         self.weekly = weekly

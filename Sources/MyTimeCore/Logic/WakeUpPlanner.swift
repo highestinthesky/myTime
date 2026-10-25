@@ -2,6 +2,12 @@ import Foundation
 public enum WakeUpPlanner {
     public static func next(state: PersistedState, runtime: EngineRuntime, now: Date, nextDayStart: Date) -> WakeUp? {
         var candidates: [(Date, Bool)] = [(nextDayStart, false)]
+        if let unlock = state.unlock, unlock.isActive(at: now) {
+            candidates.append((unlock.endsAt, true))
+            if !unlock.warned {
+                candidates.append((unlock.warningAt, false))
+            }
+        }
         candidates += state.grants.map { ($0.expiresAt, true) }
         for booking in state.bookings where booking.isUpcoming(at: now) {
             candidates.append((booking.start, true))

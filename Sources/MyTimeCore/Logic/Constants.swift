@@ -1,9 +1,15 @@
 import Foundation
 
 public enum Constants {
+    public static let unlockLengthUnits = [1, 2, 5, 10]
+    public static let gatePauseCap = 30
     public static let schemaVersion: Int = 1
     #if DEV_TIMESCALE
         public static let isDev = true
+        public static let unlockSecondsPerUnit = 10
+        public static let unlockStreakGap: TimeInterval = 30
+        public static let unlockWarningLead: TimeInterval = 5
+        public static let unlockWarningMinimum: TimeInterval = 2
         public static let extendWindow: TimeInterval = 10
         public static let focusCheckInterval: TimeInterval = 5
         public static let bookingHeadsUp: TimeInterval = 30
@@ -20,6 +26,10 @@ public enum Constants {
         public static let minClaimable: TimeInterval = 5
     #else
         public static let isDev = false
+        public static let unlockSecondsPerUnit = 60
+        public static let unlockStreakGap: TimeInterval = 900
+        public static let unlockWarningLead: TimeInterval = 30
+        public static let unlockWarningMinimum: TimeInterval = 5
         public static let extendWindow: TimeInterval = 10
         public static let focusCheckInterval: TimeInterval = 30
         public static let bookingHeadsUp: TimeInterval = 300

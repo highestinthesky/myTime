@@ -3,7 +3,7 @@ public enum EngineError: Error, Equatable {
     case unknownApp, unknownGrant, modeNotAllowed, focusActive, invalidAmount(max: Int), notEnoughTokens, noteTooShort,
         replyLimitReached, cannotExtend, reasonTooShort, emergencyUnavailable, bookingTooSoon(leadSeconds: Int),
         bookingTooFar, invalidDuration(minSeconds: Int, maxSeconds: Int), bookingOverlap, allowanceExceeded,
-        cannotCancel, cannotExtendBooking
+        cannotCancel, cannotExtendBooking, unlockActive, invalidLength, priceChanged
     public var userMessage: String {
         switch self {
         case .unknownApp: return "That app isn't blocked anymore."
@@ -11,6 +11,9 @@ public enum EngineError: Error, Equatable {
         case .modeNotAllowed: return "That option is turned off for this app."
         case .focusActive: return "End your focus session first."
         case let .invalidAmount(max): return "Choose between 1 and \(max) tokens."
+        case .unlockActive: return "An Unlock is already running."
+        case .invalidLength: return "Choose one of the listed lengths."
+        case .priceChanged: return "The price changed. Choose again."
         case .notEnoughTokens: return "Not enough tokens."
         case .noteTooShort: return "Write at least 8 characters."
         case .replyLimitReached: return "No replies left today."

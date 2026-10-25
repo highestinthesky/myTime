@@ -37,7 +37,7 @@ scripts/uninstall.sh      # developer escape hatch; the in-app uninstall is dela
 
 ```bash
 swift build
-swift test                # 126 tests
+swift test                # 163 tests
 swift format --in-place --recursive Sources Tests
 ```
 

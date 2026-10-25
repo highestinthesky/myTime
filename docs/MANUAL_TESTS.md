@@ -64,3 +64,7 @@ Run each step against scripts/build.sh --dev unless noted.
 25. **Uninstall:** schedule uninstall → after ~1 minute myTime leaves the menu bar and is not relaunched, and `/Applications/myTime.app` is in the Trash.
 
 Then re-run steps 1–7 against a release build (`scripts/build.sh`).
+
+## Run 5 — Unlock
+
+Task 2 adds Core only; its plan assigns no new manual steps. Unlock UI checks 26–30 follow in Task 3. These checks are for the reviewer; no install or launch-agent commands were run.

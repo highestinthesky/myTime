@@ -1,10 +1,11 @@
 import Foundation
 public enum AccessMode: String, Codable, CaseIterable {
-    case quickLook, reply, booked
+    case quickLook, reply, unlock, booked
     public var title: String {
         switch self {
         case .quickLook: return "Quick look"
         case .reply: return "Reply mode"
+        case .unlock: return "Unlock"
         case .booked: return "Sessions"
         }
     }

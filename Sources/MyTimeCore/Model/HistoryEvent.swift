@@ -2,7 +2,7 @@ import Foundation
 public enum HistoryKind: String, Codable {
     case focusStarted, focusEnded, tokenEarned, dayReset, awayClaimed, quickLook, reply, extended, backedOff,
         bookingCreated, bookingCanceled, bookingEnded, bookingExtended, emergency, changeScheduled, changeApplied,
-        changeCanceled, appAdded, appRemoved, tamperDetected, quit
+        changeCanceled, appAdded, appRemoved, tamperDetected, quit, unlockBought, unlockEnded
 }
 public struct HistoryEvent: Codable, Equatable, Identifiable {
     public var id: UUID

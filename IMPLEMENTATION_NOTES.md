@@ -174,3 +174,27 @@ Verification: `swift build`, `swift build -Xswiftc -DDEV_TIMESCALE`, `swift test
 | Request | Change |
 |---|---|
 | Settings can't be customized; steppers add fixed steps to odd values ("15 min 15 s") | General tab rows are typed: whole number + seconds/minutes/hours menu (opens in the largest unit that fits exactly), number fields for counts, an hour menu for the day start. Inline "Enter a whole number." / "Choose between … and …." messages disable Apply. `SettingKey.step` removed. Setting values and change summaries use `DurationFormat.exact`, so they're never rounded. `SettingInputTests` (4). |
+
+## Run 5 — Unlock
+
+### Task 2
+
+Built the public Unlock models, pure pricing and copy helpers, buy/end/finish/warning rules, fixed gate pause calculation, persistence fields, lenient decoding of every stats field, history, permission checks, and warning/end wake-ups. All 33 plan tests were copied verbatim into the five named files, then mechanically formatted as required. Four additional persistence/boundary tests cover missing stats fields, state round-trip, purchase-day/week accounting, and simultaneous grant/Unlock termination deduplication. No existing test was changed or deleted. Updated README and AGENTS test counts to 163.
+
+Deviations and rulings:
+- Named the logic extension `Logic/UnlockEngine.swift` instead of `Logic/Unlock.swift`: SwiftPM fails with “multiple producers” when Model and Logic share `Unlock.swift`. The model filename and all public APIs stay as planned.
+- Added temporary no-op handling of `.unlockWarning` / `.unlockEnded` in AppModel's exhaustive effect switch. Without it, Task 2 cannot build after adding the enum cases. Task 3 replaces these with presentation/closure. No other App code changed.
+- The prose says “the same four” purchase stats on WeeklyStats, but spec §4.5 and the plan's model interface have no weekly `tokensSpent`. Followed that model: weekly `unlocks`, `unlockTokens`, and `highestMultiplier` record purchases, with `unlockSeconds` at finish. Daily `tokensSpent` is also incremented.
+- Kept schema 1, old modes, existing Discord defaults, and legacy rules intentionally: migration/removal belongs to Task 4, which is outside this assignment. No spec revision was needed for these planned intermediate states.
+- Used the requested current-checkout branch rather than a separate worktree. Existing untracked `docs/HOW_IT_WORKS.md` and `output/` were left alone.
+
+Unverified: live UI and all installed-app behavior; Task 2 has no assigned manual steps. No install, uninstall, launch-agent, or Application Support operations were performed.
+
+Commands and results:
+- `git switch -c run-5-unlock` — initial sandbox lock denied; authorized escalation succeeded.
+- `swift test --filter Unlock` — initial sandbox attempt could not write the compiler module cache; elevated retry failed as expected with missing Unlock APIs before implementation.
+- `swift format --in-place --recursive Sources Tests` — passed on each run.
+- `swift build` — first failed because of duplicate `Unlock.swift` output names; after renaming, failed on Swift exclusivity in `endUnlock`; fixed by capturing `now` locally.
+- `swift format --in-place --recursive Sources Tests && swift build && swift test` — passed after those fixes: 159 tests, zero failures.
+- `swift format --in-place --recursive Sources Tests && swift build && swift test` — final Task 2 verification after additional coverage: build zero errors, 163 tests, zero failures. Swift build/test used authorized compiler-cache access; logs were redirected to `/tmp/mytime-task2-build.log` and `/tmp/mytime-task2-test.log`.
+- `git diff --check` — passed.

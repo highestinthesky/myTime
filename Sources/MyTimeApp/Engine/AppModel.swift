@@ -67,6 +67,8 @@ import MyTimeCore
                 headsUp.show(.started, bookingID: bookingID)
             case let .bookingHeadsUp(bookingID):
                 headsUp.show(.endingSoon, bookingID: bookingID)
+            case .unlockWarning, .unlockEnded:
+                break  // Presented by the Task 3 UI.
             case .uninstall:
                 saveNow()
                 Installer.uninstall()

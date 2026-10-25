@@ -60,6 +60,11 @@ public struct EngineCore {
             }
         }
 
+        // Step 5: finish access before deciding whether to warn.
+        for effect in finishUnlockIfDue() + unlockWarningIfDue(input) where !effects.contains(effect) {
+            effects.append(effect)
+        }
+
         // Step 6: booking transitions (spec §5.4). A grant expiring as a session ends closes the app once.
         for effect in applyBookingTransitions(input) where !effects.contains(effect) {
             effects.append(effect)
@@ -94,6 +99,7 @@ public struct EngineCore {
     }
     public func isAllowed(appID: UUID) -> Bool {
         if activeGrant(appID: appID) != nil { return true }
+        if activeUnlock != nil && app(id: appID)?.modes.contains(.unlock) == true { return true }
         return activeBooking != nil && app(id: appID)?.modes.contains(.booked) == true
     }
 
