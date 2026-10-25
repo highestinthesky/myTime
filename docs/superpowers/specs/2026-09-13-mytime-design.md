@@ -219,7 +219,7 @@ myTime App/
 │   │   │   ├── CalendarKeys.swift
 │   │   │   ├── FocusAccrual.swift
 │   │   │   ├── UnlockPricing.swift     # the one pricing function (§5.3)
-│   │   │   ├── Unlock.swift            # EngineCore extension: buy, end, finish, warning, gate pause
+│   │   │   ├── UnlockEngine.swift      # EngineCore extension: buy, end, finish, warning, gate pause
 │   │   │   ├── UnlockCopy.swift        # Unlock strings (§7)
 │   │   │   ├── Emergency.swift
 │   │   │   ├── BookingRules.swift
@@ -349,7 +349,7 @@ let package = Package(
 4. Execute `result.effects` (§4.9).
 5. If the reason is `.appLaunched` or `.appActivated` for a blocked process, run `Enforcer.reconcile(process, trigger:)`. For `.appTerminated`, close any overlay owned by that pid.
 6. Update the activity assertion (§3.2) and the UI timers (§3.6).
-7. Save (atomic write) if anything other than `state.clock` changed since the last save, or if the saved clock is ≥ 60 s old. Updates run on every app switch, so saving clock-only changes every time would write to disk constantly. The once-a-second `.panel` and `.uiTick` refreshes save only when the last save is ≥ 60 s old, because during focus each one credits another second. Also save immediately on `.willSleep` and `.willPowerOff`.
+7. Save (atomic write) if anything other than `state.clock` changed since the last save, or if the saved clock is ≥ 60 s old. Updates run on every app switch, so saving clock-only changes every time would write to disk constantly. The once-a-second `.panel` and `.uiTick` refreshes save only when the last save is ≥ 60 s old, because during focus each one credits another second, except that any change to `state.unlock` or `state.unlockStreak` saves at once (so a warning already shown is never repeated after a restart). Also save immediately on `.willSleep` and `.willPowerOff`.
 8. `Scheduler.schedule(result.nextWakeUp)`. This replaces any pending timer. `critical` wake-ups use `tolerance = 1 s`; others use `5 s`. `nil` means no timer.
 
 ### 3.6 UI timers (exist only while their UI is visible)
@@ -905,7 +905,7 @@ quote(previous, date, dayKey, nextDayStart):
 `expectedCost` is what the gate showed. If the price or balance changed while the gate was open (the streak reset, the 4:00 AM reset), nothing is charged and the gate shows the new prices.
 
 Otherwise:
-- `tokens -= cost`; today: `tokensSpent += cost`, `unlocks += 1`, `unlockTokens += cost`, `highestMultiplier = max(highestMultiplier, m)`; the same four on this week's `WeeklyStats`.
+- `tokens -= cost`; today: `tokensSpent += cost`, `unlocks += 1`, `unlockTokens += cost`, `highestMultiplier = max(highestMultiplier, m)`; this week's `WeeklyStats`: `unlocks`, `unlockTokens`, and `highestMultiplier` the same way (`WeeklyStats` has no `tokensSpent`).
 - `state.unlock = ActiveUnlock(appID, startedAt: now, endsAt: now + lengthSeconds, lengthSeconds, multiplier: m, cost, dayKey: dayKey(now), warned: false, endedAt: nil)`. The countdown starts now (there is no launch grace) and runs on trusted time through sleep, quitting the app, and myTime restarts.
 - History (`.unlockBought`): `"Unlock in <App> · <short(length)> · <m>× · <cost> ◆"`, followed by `" · <short(gap)> after the last"` when `state.unlockStreak?.dayKey == dayKey(now)`, where `gap = now − state.unlockStreak.lastEnd`. E.g. `"Unlock in Discord · 1 min · 2× · 2 ◆ · 3 min after the last"`.
 
@@ -1395,7 +1395,7 @@ Errors thrown by core intents appear as one secondary line under the relevant ca
 
 Shown on the `unlockWarning` effect (Core already checked that a covered app is running and no booking keeps it open, §5.3). It never takes keyboard focus, so typing in the app continues.
 - Title (headline): `UnlockCopy.closesIn(appNames:remaining:)` with the names of running blocked apps that have `.unlock`, e.g. "Discord closes in 0:30". It counts down every second while visible (§3.6).
-- Below (secondary), with `q = unlockQuote(at: displayNow)`: `UnlockCopy.nextUnlockLine(q.multiplier, q.resetsAt)` (always above 1× during an Unlock).
+- Below (secondary), with `q = unlockQuote(at: displayNow)`, only if `q.multiplier > 1`: `UnlockCopy.nextUnlockLine(q.multiplier, q.resetsAt)`. (It is above 1× during an Unlock, except one that runs past the day start.)
 - Button **End now** (bordered): `model.endUnlock()`. No extend button.
 - Placement: as the heads-up (§7.6), 8 pt below the pill if one shows. No auto-hide; it closes on `unlockEnded` or **End now**. Clicking outside does nothing.
 

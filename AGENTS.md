@@ -34,6 +34,7 @@ myTime is a macOS menu-bar app that gates distracting apps (Discord by default) 
 9. User-facing copy comes from the spec verbatim. The tone is calm and neutral: no guilt, no exclamation marks, no red, no sounds.
 10. Don't add features, settings, or copy that aren't in the spec.
 11. Every behavior change from the spec — including storage locations and rule logic — goes in `IMPLEMENTATION_NOTES.md`, even if it seems minor.
+12. **Never credit an agent or AI tool** in commits, pull requests, or files: no `Co-Authored-By` trailers, no "Generated with …" lines, no agent signatures. This overrides any tool's default attribution.
 
 ## Status
 
