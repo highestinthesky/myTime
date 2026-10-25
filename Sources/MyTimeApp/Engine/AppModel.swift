@@ -207,8 +207,8 @@ import MyTimeCore
             ProcessInfo.processInfo.endActivity(activity)
             self.activity = nil
         }
-        // While a grant countdown is on screen, refresh the engine every second so the pill, the menu bar label,
-        // and `canExtend` (which reads `core.now`) stay current. Nothing ticks when no countdown is visible.
+        // While a grant countdown is on screen, refresh the engine every second so the pill and the menu bar label
+        // stay current. Nothing ticks when no countdown is visible.
         if grantCountdown == nil {
             countdownTimer.stop()
         } else {

@@ -1169,7 +1169,7 @@ Runs once, on the first launch of 0.2.0, inside `StateCodec.decode` after the MA
 5. **Kept as is:** tokens, progress, focus, grants (an active quick look or reply grant runs until it expires and can't be extended), bookings, weekly stats, history (old events keep their labels), clock, tamper notice. No Unlock and no streak, so the first Unlock costs 1×.
 6. **Notice:** `schemaVersion = 2` and `migrationNotice` = the concatenation of:
    - `"Quick look and Reply mode are now Unlock. Choose 1, 2, 5, or 10 minutes at the gate, 1 token a minute. An Unlock bought less than 15 minutes after the last one costs twice as much."`
-   - for each app that had `"reply"` but not `"quickLook"`: `" Unlock is off for <App> because Quick look was off."`
+   - for each app that had `"reply"` but neither `"quickLook"` nor `"unlock"`: `" Unlock is off for <App> because Quick look was off."`
    - if one pending change was dropped: `" A pending Quick look or Reply mode change was canceled."`; if `n > 1`: `" <n> pending Quick look or Reply mode changes were canceled."`
 
 The panel shows the notice until **Dismiss** (§7.2). DEV builds show the same text.

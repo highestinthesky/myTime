@@ -334,3 +334,11 @@ Task 4 read-only review: no Critical or Important findings in migration, removal
 Review scope rulings: the real-state check remains prohibited in this session and is the reviewer's first check; installed saving/relaunch, panel and pill layout, and enforcement remain manual checks. Already-reviewed Tasks 2–3/5 and unrelated untracked content were left alone. A pre-existing AppModel comment mentioning canExtend is stale documentation only; its rules were already removed and it has no runtime effect. These limits do not relax the migration contract or remove any plan test.
 
 After the pill tint correction, reran the exact final pipeline above (same log paths): formatting passed; normal and DEV builds finished with zero errors; **173 tests passed, zero failures**. Final `git diff --check` passed. The independent test-name audit found exactly the eight authorized deletions and retained every other existing test name. Commit command: `git commit -m "Run 5 Task 4: Remove Quick look and Reply; migrate schema 1"`; no push.
+
+### Task 4 review (Claude)
+
+- Real-state check (Review Focus 1): a read-only copy of the installed 0.1.0 `state.json` (6 apps, 500 history events, 28 days of stats) decoded as `.migrated`. Tokens, progress, focus, grants, bookings, weekly stats, all 500 history events, clock, and tamper notice were identical to the original payload; every app became Unlock + Sessions; `quickLookSecondsPerToken` was dropped; no pending changes; notice was the base text only. Re-encoding and decoding gave `.ok` with the same state. The scratch test was deleted afterward; the live file was not touched.
+- Approved the worker's ruling on the per-app notice line (Reply without Quick look *or* Unlock) and updated spec §5.11 step 6 to say so.
+- Removed a stale `canExtend` mention from an AppModel comment.
+- The warm pill tint renders the app icon as a solid warm silhouette in the last 10 s. This meets §7.5; check it by eye during the manual run.
+- `swift format lint`, `swift build`, `swift build -Xswiftc -DDEV_TIMESCALE`, `swift test`: 173 tests, 0 failures.
