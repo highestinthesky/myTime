@@ -1162,7 +1162,7 @@ The Quit window (§7.11) runs the `Constants.quitWait` countdown before calling 
 
 Runs once, on the first launch of 0.2.0, inside `StateCodec.decode` after the MAC check (so a valid old file never looks tampered). `static func migrateV1(_ json: inout [String: Any])` (internal) works on the `JSONSerialization` payload, the only place that knows the schema-1 shape:
 
-1. **Apps:** each app's `modes` becomes `["unlock"]` if it contained `"quickLook"`, plus `"booked"` if it contained `"booked"`. `"reply"` alone doesn't enable Unlock, since that would be a loosening change.
+1. **Apps:** each app's `modes` becomes `["unlock"]` if it contained `"quickLook"` or already contained `"unlock"` (a schema-1 file saved by a pre-release Run 5 build), plus `"booked"` if it contained `"booked"`. `"reply"` alone doesn't enable Unlock, since that would be a loosening change. A pending `setMode` for `"unlock"` is kept as is.
 2. **Pending changes:** a `setMode` with mode `"quickLook"` becomes the same change with mode `"unlock"`, keeping its `id`, `createdAt`, and `applyAt`; its summary becomes `"Turn on Unlock for <App>"`. A `setMode` with mode `"reply"` is dropped. A `setNumber` whose key was removed (§8.1) is dropped. Everything else is kept.
 3. **Settings numbers:** remove `quickLookSecondsPerToken`, `quickLookMaxTokens`, `replyTokenCost`, `replySeconds`, `replyPerDay`.
 4. **Daily stats:** remove `quickLooks` and `replies` (the daily reply count). Lenient decoding (§4.5) fills the Unlock fields.
