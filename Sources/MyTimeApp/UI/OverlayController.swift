@@ -12,7 +12,7 @@ import SwiftUI
     private var pillMoveObserver: NSObjectProtocol?
 
     private static let pillOriginKey = "mytime.pillOrigin"
-    private static let pillSize = NSSize(width: 320, height: 72)
+    private static let pillSize = NSSize(width: 220, height: 44)
 
     var gateAppID: UUID? { session?.app.id }
     var isGateVisible: Bool { gatePanel != nil }
@@ -52,12 +52,6 @@ import SwiftUI
             },
             unlock: { [weak self] length, cost in
                 self?.unlock(length, cost)
-            },
-            quickLook: { [weak self] count in
-                self?.quickLook(count)
-            },
-            reply: { [weak self] note in
-                self?.reply(note)
             },
             openEmergency: { [weak self] in
                 self?.openEmergency()
@@ -187,43 +181,6 @@ import SwiftUI
             if error == .priceChanged || error == .notEnoughTokens {
                 session.selectedLength = nil
             }
-            session.errorMessage = error.userMessage
-        } catch {
-            session.errorMessage = nil
-        }
-    }
-
-    private func quickLook(_ tokens: Int) {
-        guard let session else { return }
-        session.touch()
-        do {
-            // The app was quit when the gate opened; it relaunches right after buying.
-            _ = try model.perform {
-                try $0.buyQuickLook(appID: session.app.id, tokens: tokens)
-            }
-            let bundleURL = session.bundleURL
-            closeGate()
-            relaunch(bundleURL)
-        } catch let error as EngineError {
-            session.errorMessage = error.userMessage
-        } catch {
-            session.errorMessage = nil
-        }
-    }
-
-    private func reply(_ note: String) {
-        guard let session else {
-            return
-        }
-        session.touch()
-        do {
-            _ = try model.perform {
-                try $0.buyReply(appID: session.app.id, note: note)
-            }
-            let bundleURL = session.bundleURL
-            closeGate()
-            relaunch(bundleURL)
-        } catch let error as EngineError {
             session.errorMessage = error.userMessage
         } catch {
             session.errorMessage = nil

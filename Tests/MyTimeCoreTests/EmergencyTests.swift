@@ -75,6 +75,12 @@ final class EmergencyTests: XCTestCase {
         let grant = try core.useEmergency(appID: discord, reason: "teammate needs the build link")
         sim.advance(595)
         _ = core.update(sim.input)
-        XCTAssertFalse(core.canExtend(grantID: grant.id))
+        XCTAssertEqual(core.activeGrant(appID: discord)?.expiresAt, grant.expiresAt)
+        XCTAssertEqual(core.remaining(of: grant), 5, accuracy: 0.001)
+        XCTAssertEqual(core.state.tokens, 3)
+        sim.advance(5)
+        XCTAssertEqual(core.update(sim.input).effects, [.terminateIfNotAllowed(appID: discord)])
+        XCTAssertNil(core.activeGrant(appID: discord))
+        XCTAssertEqual(core.state.tokens, 3)
     }
 }

@@ -24,13 +24,14 @@ public struct PersistedState: Codable, Equatable {
     public var history: [HistoryEvent]
     public var clock: TrustedClockState
     public var tamperNoticeUntil: Date?
+    public var migrationNotice: String?
     public init(
         schemaVersion: Int = Constants.schemaVersion, settings: Settings, pending: [PendingChange] = [],
         tokens: Int = 0, progressSeconds: Double = 0, tokensDayKey: String, focus: FocusSession? = nil,
         grants: [AccessGrant] = [], unlock: ActiveUnlock? = nil, unlockStreak: UnlockStreak? = nil,
         bookings: [Booking] = [], daily: [String: DailyStats] = [:],
         weekly: [String: WeeklyStats] = [:], history: [HistoryEvent] = [],
-        clock: TrustedClockState = TrustedClockState(), tamperNoticeUntil: Date? = nil
+        clock: TrustedClockState = TrustedClockState(), tamperNoticeUntil: Date? = nil, migrationNotice: String? = nil
     ) {
         self.schemaVersion = schemaVersion
         self.settings = settings
@@ -48,6 +49,7 @@ public struct PersistedState: Codable, Equatable {
         self.history = history
         self.clock = clock
         self.tamperNoticeUntil = tamperNoticeUntil
+        self.migrationNotice = migrationNotice
     }
     public static func fresh(now: Date, timeZone: TimeZone) -> PersistedState {
         let settings = Settings(apps: [.discord()])

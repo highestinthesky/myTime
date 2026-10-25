@@ -3,11 +3,11 @@ import XCTest
 
 final class SettingKeyTests: XCTestCase {
     func testDefaultsMatchSpec() {
-        XCTAssertEqual(SettingKey.allCases.count, 19)
+        XCTAssertEqual(SettingKey.allCases.count, 14)
         XCTAssertEqual(SettingKey.focusSecondsPerToken.defaultValue, 900)
         XCTAssertEqual(SettingKey.dayStartHour.defaultValue, 4)
-        XCTAssertEqual(SettingKey.quickLookSecondsPerToken.defaultValue, 30)
-        XCTAssertEqual(SettingKey.quickLookMaxTokens.defaultValue, 3)
+        XCTAssertEqual(SettingKey.emergencyAccessSeconds.defaultValue, 600)
+        XCTAssertEqual(SettingKey.emergencyPerWeek.defaultValue, 1)
         XCTAssertEqual(SettingKey.gatePauseSeconds.defaultValue, 5)
         XCTAssertEqual(SettingKey.weeklyAllowanceSeconds.defaultValue, 18000)
         XCTAssertEqual(SettingKey.bookingLeadSeconds.defaultValue, 600)
@@ -27,19 +27,19 @@ final class SettingKeyTests: XCTestCase {
         XCTAssertEqual(SettingKey.focusSecondsPerToken.looserWhen, .lower)
         XCTAssertEqual(SettingKey.weeklyAllowanceSeconds.looserWhen, .higher)
         XCTAssertEqual(SettingKey.dayStartHour.looserWhen, .anyChange)
-        XCTAssertEqual(SettingKey.replyTokenCost.looserWhen, .lower)
+        XCTAssertEqual(SettingKey.bookingLeadSeconds.looserWhen, .lower)
         XCTAssertEqual(SettingKey.looseningDelaySeconds.looserWhen, .lower)
     }
 
     func testClamp() {
-        XCTAssertEqual(SettingKey.quickLookMaxTokens.clamp(99), 10)
+        XCTAssertEqual(SettingKey.emergencyPerWeek.clamp(99), 3)
         XCTAssertEqual(SettingKey.dayStartHour.clamp(-3), 0)
         XCTAssertEqual(SettingKey.gatePauseSeconds.clamp(7), 7)
     }
 
     func testReleaseConstants() {
         XCTAssertFalse(Constants.isDev)
-        XCTAssertEqual(Constants.extendWindow, 10)
+        XCTAssertEqual(Constants.unlockStreakGap, 900)
         XCTAssertEqual(Constants.focusCheckInterval, 30)
         XCTAssertEqual(Constants.bookingHeadsUp, 300)
         XCTAssertEqual(Constants.bookingStartStepSeconds, 300)

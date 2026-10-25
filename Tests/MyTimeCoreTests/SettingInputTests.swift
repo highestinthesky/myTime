@@ -33,6 +33,6 @@ final class SettingInputTests: XCTestCase {
 
     func testRangeMessages() {
         XCTAssertEqual(SettingKey.focusSecondsPerToken.rangeMessage(locale: enUS), "Choose between 5 min and 1h.")
-        XCTAssertEqual(SettingKey.replyPerDay.rangeMessage(locale: enUS), "Choose between 0 and 10.")
+        XCTAssertEqual(SettingKey.emergencyPerWeek.rangeMessage(locale: enUS), "Choose between 0 and 3.")
     }
 }

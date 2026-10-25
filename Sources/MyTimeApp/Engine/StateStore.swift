@@ -29,6 +29,13 @@ import MyTimeCore
         switch StateCodec.decode(data) {
         case let .ok(state):
             return (state, .existing)
+        case let .migrated(state):
+            do {
+                try save(state)
+            } catch {
+                NSLog("myTime: save migrated state failed: \(error)")
+            }
+            return (state, .existing)
         case .tampered:
             let aside = directory.appendingPathComponent("state.tampered-\(Int(now.timeIntervalSince1970)).json")
             try? FileManager.default.moveItem(at: fileURL, to: aside)

@@ -30,6 +30,16 @@ struct PopoverView: View {
                 Text("Saved data was edited outside myTime, so balances were reset.")
                     .foregroundStyle(.secondary)
             }
+            if let notice = model.core.state.migrationNotice {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(notice)
+                        .foregroundStyle(.secondary)
+                    Button("Dismiss") {
+                        model.perform { $0.dismissMigrationNotice() }
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
             focusBlock
             if model.core.claimableSeconds >= Constants.minClaimable {
                 claimRow

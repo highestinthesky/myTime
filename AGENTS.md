@@ -40,9 +40,9 @@ myTime is a macOS menu-bar app that gates distracting apps (Discord by default) 
 
 v1 (0.1.0) is complete: Runs 1–4 are built, reviewed, and committed. v1 finished with 126 tests. Those run plans in `docs/superpowers/plans/` are historical.
 
-The current `swift test` suite runs 163 tests.
+The current `swift test` suite runs 173 tests.
 
-Run 5 (Unlock, 0.2.0) is in progress: spec revision 8, plan `docs/superpowers/plans/2026-10-24-run-5-unlock.md`.
+Run 5 (Unlock, 0.2.0) implementation is complete through Task 4 (legacy-mode removal and schema-1 migration); Task 5 (icon) is also complete. Task 4 review and Task 6 whole-run/manual checks remain: spec revision 8, plan `docs/superpowers/plans/2026-10-24-run-5-unlock.md`.
 
 ## Working on a change
 

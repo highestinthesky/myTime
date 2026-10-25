@@ -7,7 +7,7 @@ final class BookingTransitionTests: XCTestCase {
     /// A 30-minute session from 10:15 to 10:45, booked at 10:00 on Monday. Discord has Sessions on; "Notes" doesn't.
     private func scenario() throws -> (core: EngineCore, sim: Sim, booking: Booking, discord: UUID, notes: UUID) {
         var (core, sim) = makeEngine(at: date(2026, 9, 14, 10))
-        let notes = BlockedApp(name: "Notes", bundleIDs: ["com.example.notes"], modes: [.quickLook])
+        let notes = BlockedApp(name: "Notes", bundleIDs: ["com.example.notes"], modes: [.unlock])
         core.state.settings.apps.append(notes)
         let booking = try core.createBooking(start: date(2026, 9, 14, 10, 15), durationSeconds: 1800)
         return (core, sim, booking, core.state.settings.apps[0].id, notes.id)
@@ -103,7 +103,7 @@ final class BookingTransitionTests: XCTestCase {
         sim.advance(1600)  // 10:26:40
         _ = core.update(sim.input)
         core.state.grants = [
-            AccessGrant(appID: discord, kind: .quickLook, createdAt: core.now, expiresAt: date(2026, 9, 14, 10, 45))
+            AccessGrant(appID: discord, kind: .emergency, createdAt: core.now, expiresAt: date(2026, 9, 14, 10, 45))
         ]
         sim.advance(18 * 60 + 20)  // 10:45
         XCTAssertEqual(core.update(sim.input).effects, [.terminateIfNotAllowed(appID: discord)])

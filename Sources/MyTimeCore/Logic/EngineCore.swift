@@ -103,45 +103,10 @@ public struct EngineCore {
         return activeBooking != nil && app(id: appID)?.modes.contains(.booked) == true
     }
 
-    public mutating func buyQuickLook(appID: UUID, tokens: Int) throws -> AccessGrant {
-        guard let app = app(id: appID) else { throw EngineError.unknownApp }
-        guard app.modes.contains(.quickLook) else { throw EngineError.modeNotAllowed }
-        guard state.focus == nil else { throw EngineError.focusActive }
-        guard (1...setting(.quickLookMaxTokens)).contains(tokens) else {
-            throw EngineError.invalidAmount(max: setting(.quickLookMaxTokens))
-        }
-        guard state.tokens >= tokens else { throw EngineError.notEnoughTokens }
-        state.tokens -= tokens
-        updateToday {
-            $0.tokensSpent += tokens
-            $0.quickLooks += 1
-        }
-        // The countdown starts now: the gated app relaunches within about a second of buying.
-        let duration = tokens * setting(.quickLookSecondsPerToken)
-        let grant = AccessGrant(
-            appID: appID, kind: .quickLook, createdAt: now,
-            expiresAt: now.addingTimeInterval(Double(duration)), tokensSpent: tokens)
-        state.grants.append(grant)
-        record(.quickLook, "Quick look in \(app.name) · \(DurationFormat.clock(Double(duration))) · \(tokens) ◆")
-        return grant
+    public mutating func dismissMigrationNotice() {
+        state.migrationNotice = nil
     }
 
-    public func canExtend(grantID: UUID) -> Bool {
-        guard let grant = state.grants.first(where: { $0.id == grantID }) else { return false }
-        return (grant.kind == .quickLook || grant.kind == .reply) && now < grant.expiresAt
-            && remaining(of: grant) <= Constants.extendWindow && state.tokens >= 1
-    }
-    public mutating func extendGrant(grantID: UUID) throws {
-        guard let index = state.grants.firstIndex(where: { $0.id == grantID }) else { throw EngineError.unknownGrant }
-        guard canExtend(grantID: grantID) else { throw EngineError.cannotExtend }
-        state.grants[index].expiresAt = state.grants[index].expiresAt.addingTimeInterval(
-            Double(setting(.quickLookSecondsPerToken)))
-        state.tokens -= 1
-        updateToday { $0.tokensSpent += 1 }
-        record(
-            .extended,
-            "Extended \(app(id: state.grants[index].appID)?.name ?? "app") · +\(setting(.quickLookSecondsPerToken)) s")
-    }
     public mutating func recordBackedOff(appID: UUID) {
         guard let app = app(id: appID) else { return }
         updateToday { $0.backedOff += 1 }

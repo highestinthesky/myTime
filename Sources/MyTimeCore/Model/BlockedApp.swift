@@ -1,10 +1,8 @@
 import Foundation
 public enum AccessMode: String, Codable, CaseIterable {
-    case quickLook, reply, unlock, booked
+    case unlock, booked
     public var title: String {
         switch self {
-        case .quickLook: return "Quick look"
-        case .reply: return "Reply mode"
         case .unlock: return "Unlock"
         case .booked: return "Sessions"
         }
@@ -24,6 +22,6 @@ public struct BlockedApp: Codable, Equatable, Identifiable {
     public static func discord() -> BlockedApp {
         BlockedApp(
             name: "Discord", bundleIDs: ["com.hnc.Discord", "com.hnc.DiscordPTB", "com.hnc.DiscordCanary"],
-            modes: [.quickLook, .reply, .booked])
+            modes: [.unlock, .booked])
     }
 }

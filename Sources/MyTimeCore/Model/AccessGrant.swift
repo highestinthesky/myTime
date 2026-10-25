@@ -1,5 +1,9 @@
 import Foundation
-public enum GrantKind: String, Codable { case quickLook, reply, emergency }
+public enum GrantKind: String, Codable {
+    // Only in files from 0.1.0.
+    case quickLook, reply
+    case emergency
+}
 public struct AccessGrant: Codable, Equatable, Identifiable {
     public var id: UUID
     public var appID: UUID

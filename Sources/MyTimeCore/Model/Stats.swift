@@ -5,8 +5,6 @@ public struct DailyStats: Codable, Equatable {
     public var tokensEarned: Int
     public var tokensSpent: Int
     public var backedOff: Int
-    public var quickLooks: Int
-    public var replies: Int
     public var claimedAwaySeconds: Double
     public var unclaimedAwaySeconds: Double
     public var unlocks: Int
@@ -15,16 +13,14 @@ public struct DailyStats: Codable, Equatable {
     public var highestMultiplier: Int
 
     public init(
-        focusSeconds: Double = 0, tokensEarned: Int = 0, tokensSpent: Int = 0, backedOff: Int = 0, quickLooks: Int = 0,
-        replies: Int = 0, claimedAwaySeconds: Double = 0, unclaimedAwaySeconds: Double = 0, unlocks: Int = 0,
+        focusSeconds: Double = 0, tokensEarned: Int = 0, tokensSpent: Int = 0, backedOff: Int = 0,
+        claimedAwaySeconds: Double = 0, unclaimedAwaySeconds: Double = 0, unlocks: Int = 0,
         unlockSeconds: Double = 0, unlockTokens: Int = 0, highestMultiplier: Int = 0
     ) {
         self.focusSeconds = focusSeconds
         self.tokensEarned = tokensEarned
         self.tokensSpent = tokensSpent
         self.backedOff = backedOff
-        self.quickLooks = quickLooks
-        self.replies = replies
         self.claimedAwaySeconds = claimedAwaySeconds
         self.unclaimedAwaySeconds = unclaimedAwaySeconds
         self.unlocks = unlocks
@@ -38,8 +34,6 @@ public struct DailyStats: Codable, Equatable {
         case tokensEarned
         case tokensSpent
         case backedOff
-        case quickLooks
-        case replies
         case claimedAwaySeconds
         case unclaimedAwaySeconds
         case unlocks
@@ -54,8 +48,6 @@ public struct DailyStats: Codable, Equatable {
         tokensEarned = try values.decodeIfPresent(Int.self, forKey: .tokensEarned) ?? 0
         tokensSpent = try values.decodeIfPresent(Int.self, forKey: .tokensSpent) ?? 0
         backedOff = try values.decodeIfPresent(Int.self, forKey: .backedOff) ?? 0
-        quickLooks = try values.decodeIfPresent(Int.self, forKey: .quickLooks) ?? 0
-        replies = try values.decodeIfPresent(Int.self, forKey: .replies) ?? 0
         claimedAwaySeconds = try values.decodeIfPresent(Double.self, forKey: .claimedAwaySeconds) ?? 0
         unclaimedAwaySeconds = try values.decodeIfPresent(Double.self, forKey: .unclaimedAwaySeconds) ?? 0
         unlocks = try values.decodeIfPresent(Int.self, forKey: .unlocks) ?? 0

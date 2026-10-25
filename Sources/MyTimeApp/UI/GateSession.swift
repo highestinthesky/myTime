@@ -25,10 +25,8 @@ enum GateStep: Equatable {
     var now: Date
     var lastInteraction: Date
     var selectedLength: Int?
-    var quickLookTokens = 1
     var errorMessage: String?
     var step: GateStep = .choose
-    var replyNote = ""
     var emergencyReason = ""
 
     init(app: BlockedApp, bundleURL: URL?, mode: GateMode, now: Date, pauseEndsAt: Date) {

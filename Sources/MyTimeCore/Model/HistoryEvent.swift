@@ -1,6 +1,8 @@
 import Foundation
 public enum HistoryKind: String, Codable {
-    case focusStarted, focusEnded, tokenEarned, dayReset, awayClaimed, quickLook, reply, extended, backedOff,
+    // Only in files from 0.1.0.
+    case quickLook, reply, extended
+    case focusStarted, focusEnded, tokenEarned, dayReset, awayClaimed, backedOff,
         bookingCreated, bookingCanceled, bookingEnded, bookingExtended, emergency, changeScheduled, changeApplied,
         changeCanceled, appAdded, appRemoved, tamperDetected, quit, unlockBought, unlockEnded
 }

@@ -12,7 +12,7 @@ final class SettingsPolicyTests: XCTestCase {
     }
 
     private func notes() -> BlockedApp {
-        BlockedApp(name: "Notes", bundleIDs: ["com.example.notes"], modes: [.quickLook])
+        BlockedApp(name: "Notes", bundleIDs: ["com.example.notes"], modes: [.unlock])
     }
 
     func testLooseningDirection() {
@@ -31,13 +31,13 @@ final class SettingsPolicyTests: XCTestCase {
         XCTAssertFalse(loosens(.setNumber(key: .dayStartHour, value: 4)))
         XCTAssertFalse(loosens(.addApp(notes())))
         XCTAssertTrue(loosens(.removeApp(id: discord.id)))
-        XCTAssertFalse(loosens(.setMode(appID: discord.id, mode: .quickLook, enabled: false)))
-        XCTAssertFalse(loosens(.setMode(appID: discord.id, mode: .quickLook, enabled: true)))
-        var withoutQuickLook = settings
-        withoutQuickLook.apps[0].modes = [.reply]
+        XCTAssertFalse(loosens(.setMode(appID: discord.id, mode: .unlock, enabled: false)))
+        XCTAssertFalse(loosens(.setMode(appID: discord.id, mode: .unlock, enabled: true)))
+        var withoutUnlock = settings
+        withoutUnlock.apps[0].modes = [.booked]
         XCTAssertTrue(
             SettingsPolicy.isLoosening(
-                .setMode(appID: discord.id, mode: .quickLook, enabled: true), settings: withoutQuickLook))
+                .setMode(appID: discord.id, mode: .unlock, enabled: true), settings: withoutUnlock))
         XCTAssertTrue(loosens(.uninstall))
     }
 
@@ -79,14 +79,14 @@ final class SettingsPolicyTests: XCTestCase {
         core.state.pending = [
             PendingChange(
                 createdAt: now, applyAt: now.addingTimeInterval(200),
-                change: .setNumber(key: .replyPerDay, value: 7), summary: "second"),
+                change: .setNumber(key: .emergencyPerWeek, value: 3), summary: "second"),
             PendingChange(
                 createdAt: now, applyAt: now.addingTimeInterval(100),
-                change: .setNumber(key: .replyPerDay, value: 5), summary: "first"),
+                change: .setNumber(key: .emergencyPerWeek, value: 2), summary: "first"),
         ]
         sim.advance(300)
         _ = core.update(sim.input)
-        XCTAssertEqual(core.setting(.replyPerDay), 7)
+        XCTAssertEqual(core.setting(.emergencyPerWeek), 3)
         XCTAssertEqual(core.state.history.suffix(2).map(\.text), ["Applied: first", "Applied: second"])
     }
 
@@ -111,15 +111,15 @@ final class SettingsPolicyTests: XCTestCase {
         _ = core.update(sim.input)
         XCTAssertEqual(core.setting(.looseningDelaySeconds), 3600)
         XCTAssertEqual(
-            submit(&core, .setNumber(key: .replyPerDay, value: 5)),
+            submit(&core, .setNumber(key: .emergencyPerWeek, value: 2)),
             .scheduled(applyAt: date(2026, 9, 15, 11)))
     }
 
     func testValuesAreClampedToTheirRange() {
         var (core, _) = makeEngine(at: date(2026, 9, 14, 10))
-        _ = submit(&core, .setNumber(key: .quickLookMaxTokens, value: 99))
-        XCTAssertEqual(core.state.pending.first?.change, .setNumber(key: .quickLookMaxTokens, value: 10))
-        XCTAssertEqual(core.state.pending.first?.summary, "Max tokens per quick look: 3 → 10")
+        _ = submit(&core, .setNumber(key: .emergencyPerWeek, value: 99))
+        XCTAssertEqual(core.state.pending.first?.change, .setNumber(key: .emergencyPerWeek, value: 3))
+        XCTAssertEqual(core.state.pending.first?.summary, "Emergency passes per week: 1 → 3")
         XCTAssertEqual(submit(&core, .setNumber(key: .gatePauseSeconds, value: 99)), .applied)
         XCTAssertEqual(core.setting(.gatePauseSeconds), 30)
     }
@@ -140,14 +140,14 @@ final class SettingsPolicyTests: XCTestCase {
         XCTAssertEqual(core.state.pending.last?.summary, "Remove Notes")
         XCTAssertEqual(submit(&core, .removeApp(id: UUID())), .noChange)
 
-        XCTAssertEqual(submit(&core, .setMode(appID: discord.id, mode: .quickLook, enabled: false)), .applied)
-        XCTAssertEqual(core.state.settings.apps[0].modes, [.reply, .booked])
-        XCTAssertEqual(core.state.history.last?.text, "Turn off Quick look for Discord")
+        XCTAssertEqual(submit(&core, .setMode(appID: discord.id, mode: .unlock, enabled: false)), .applied)
+        XCTAssertEqual(core.state.settings.apps[0].modes, [.booked])
+        XCTAssertEqual(core.state.history.last?.text, "Turn off Unlock for Discord")
         XCTAssertEqual(
-            submit(&core, .setMode(appID: discord.id, mode: .quickLook, enabled: true)),
+            submit(&core, .setMode(appID: discord.id, mode: .unlock, enabled: true)),
             .scheduled(applyAt: date(2026, 9, 15, 10)))
-        XCTAssertEqual(core.state.pending.last?.summary, "Turn on Quick look for Discord")
-        XCTAssertEqual(submit(&core, .setMode(appID: UUID(), mode: .reply, enabled: false)), .noChange)
+        XCTAssertEqual(core.state.pending.last?.summary, "Turn on Unlock for Discord")
+        XCTAssertEqual(submit(&core, .setMode(appID: UUID(), mode: .booked, enabled: false)), .noChange)
     }
 
     func testAppliedRemovalDropsLaterChangesForThatApp() {
@@ -157,7 +157,7 @@ final class SettingsPolicyTests: XCTestCase {
         _ = submit(&core, .removeApp(id: app.id))
         sim.advance(60)
         _ = core.update(sim.input)
-        _ = submit(&core, .setMode(appID: app.id, mode: .reply, enabled: true))
+        _ = submit(&core, .setMode(appID: app.id, mode: .booked, enabled: true))
         XCTAssertEqual(core.state.pending.count, 2)
 
         sim.advance(86400)
@@ -170,16 +170,16 @@ final class SettingsPolicyTests: XCTestCase {
 
     func testCancelingAPendingChange() throws {
         var (core, sim) = makeEngine(at: date(2026, 9, 14, 10))
-        _ = submit(&core, .setNumber(key: .replyPerDay, value: 5))
+        _ = submit(&core, .setNumber(key: .emergencyPerWeek, value: 2))
         core.cancelPending(id: try XCTUnwrap(core.state.pending.first).id)
         XCTAssertTrue(core.state.pending.isEmpty)
         XCTAssertEqual(core.state.history.last?.kind, .changeCanceled)
-        XCTAssertEqual(core.state.history.last?.text, "Canceled: Reply mode uses per day: 3 → 5")
+        XCTAssertEqual(core.state.history.last?.text, "Canceled: Emergency passes per week: 1 → 2")
         core.cancelPending(id: UUID())
         XCTAssertEqual(core.state.history.last?.kind, .changeCanceled)
         sim.advance(2 * 86400)
         _ = core.update(sim.input)
-        XCTAssertEqual(core.setting(.replyPerDay), 3)
+        XCTAssertEqual(core.setting(.emergencyPerWeek), 1)
     }
 
     func testUninstallEmitsItsEffectWhenDue() {

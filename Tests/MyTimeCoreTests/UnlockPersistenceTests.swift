@@ -8,8 +8,8 @@ final class UnlockPersistenceTests: XCTestCase {
         XCTAssertEqual(try decoder.decode(DailyStats.self, from: Data("{}".utf8)), DailyStats())
         XCTAssertEqual(try decoder.decode(WeeklyStats.self, from: Data("{}".utf8)), WeeklyStats())
         XCTAssertEqual(
-            try decoder.decode(DailyStats.self, from: Data("{\"tokensSpent\":7,\"replies\":2}".utf8)),
-            DailyStats(tokensSpent: 7, replies: 2))
+            try decoder.decode(DailyStats.self, from: Data("{\"tokensSpent\":7,\"backedOff\":2}".utf8)),
+            DailyStats(tokensSpent: 7, backedOff: 2))
         XCTAssertEqual(
             try decoder.decode(WeeklyStats.self, from: Data("{\"emergencyUses\":1}".utf8)),
             WeeklyStats(emergencyUses: 1))

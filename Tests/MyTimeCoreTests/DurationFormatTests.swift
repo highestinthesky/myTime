@@ -27,7 +27,7 @@ final class DurationFormatTests: XCTestCase {
 
     func testSettingFormatting() {
         XCTAssertEqual(DurationFormat.setting(.weeklyAllowanceSeconds, 18000, locale: enUS), "5h")
-        XCTAssertEqual(DurationFormat.setting(.quickLookMaxTokens, 3, locale: enUS), "3")
+        XCTAssertEqual(DurationFormat.setting(.emergencyPerWeek, 3, locale: enUS), "3")
         XCTAssertEqual(DurationFormat.setting(.dayStartHour, 4, locale: enUS), "4:00 AM")
     }
 }

@@ -18,7 +18,7 @@ final class WakeUpPlannerTests: XCTestCase {
         var s = fresh
         s.grants = [
             AccessGrant(
-                appID: s.settings.apps[0].id, kind: .quickLook, createdAt: now,
+                appID: s.settings.apps[0].id, kind: .emergency, createdAt: now,
                 expiresAt: now.addingTimeInterval(30))
         ]
         XCTAssertEqual(plan(s), WakeUp(date: now.addingTimeInterval(30), critical: true))
@@ -75,7 +75,7 @@ final class WakeUpPlannerTests: XCTestCase {
         ]
         s.grants = [
             AccessGrant(
-                appID: s.settings.apps[0].id, kind: .quickLook, createdAt: now,
+                appID: s.settings.apps[0].id, kind: .emergency, createdAt: now,
                 expiresAt: now.addingTimeInterval(30))
         ]
         XCTAssertEqual(plan(s), WakeUp(date: now.addingTimeInterval(30), critical: true))

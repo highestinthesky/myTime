@@ -8,7 +8,7 @@ public enum SettingGroup: String, Codable, CaseIterable {
 
 public enum SettingKey: String, Codable, CaseIterable {
     case focusSecondsPerToken, dayStartHour, idleThresholdSeconds, awayClaimSecondsPerDay, autoEndAwaySeconds
-    case quickLookSecondsPerToken, quickLookMaxTokens, replyTokenCost, replySeconds, replyPerDay, gatePauseSeconds
+    case gatePauseSeconds
     case weeklyAllowanceSeconds, bookingLeadSeconds, bookingMaxSeconds, bookingExtensionSeconds
     case emergencyPerWeek, emergencyWaitSeconds, emergencyAccessSeconds, looseningDelaySeconds
 
@@ -44,26 +44,6 @@ public enum SettingKey: String, Codable, CaseIterable {
             return Row(
                 title: "End focus after away for", group: .earning, unit: .seconds, release: 1800, dev: 60,
                 range: 600...7200, looser: .higher)
-        case .quickLookSecondsPerToken:
-            return Row(
-                title: "Quick look per token", group: .spending, unit: .seconds, release: 30, dev: 30, range: 10...300,
-                looser: .higher)
-        case .quickLookMaxTokens:
-            return Row(
-                title: "Max tokens per quick look", group: .spending, unit: .count, release: 3, dev: 3, range: 1...10,
-                looser: .higher)
-        case .replyTokenCost:
-            return Row(
-                title: "Reply mode cost", group: .spending, unit: .count, release: 2, dev: 2, range: 1...10,
-                looser: .lower)
-        case .replySeconds:
-            return Row(
-                title: "Reply mode length", group: .spending, unit: .seconds, release: 180, dev: 60, range: 60...900,
-                looser: .higher)
-        case .replyPerDay:
-            return Row(
-                title: "Reply mode uses per day", group: .spending, unit: .count, release: 3, dev: 3, range: 0...10,
-                looser: .higher)
         case .gatePauseSeconds:
             return Row(
                 title: "Gate pause", group: .spending, unit: .seconds, release: 5, dev: 5, range: 0...30,

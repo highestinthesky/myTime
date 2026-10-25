@@ -152,7 +152,7 @@ struct BlockedAppsTab: View {
                 BlockedApp(
                     name: name,
                     bundleIDs: [bundleID],
-                    modes: [.quickLook, .reply, .booked]
+                    modes: [.unlock, .booked]
                 )))
     }
 }

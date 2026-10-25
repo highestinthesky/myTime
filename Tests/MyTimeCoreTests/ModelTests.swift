@@ -4,14 +4,14 @@ import XCTest
 final class ModelTests: XCTestCase {
     func testFreshStateBlocksDiscordWithAllModes() {
         let s = PersistedState.fresh(now: date(2026, 9, 14, 10), timeZone: testTZ)
-        XCTAssertEqual(s.schemaVersion, 1)
+        XCTAssertEqual(s.schemaVersion, 2)
         XCTAssertEqual(s.tokens, 0)
         XCTAssertEqual(s.tokensDayKey, "2026-09-14")
         XCTAssertEqual(s.settings.apps.count, 1)
         XCTAssertEqual(s.settings.apps[0].name, "Discord")
         XCTAssertEqual(
             s.settings.apps[0].bundleIDs, ["com.hnc.Discord", "com.hnc.DiscordPTB", "com.hnc.DiscordCanary"])
-        XCTAssertEqual(s.settings.apps[0].modes, [.quickLook, .reply, .booked])
+        XCTAssertEqual(s.settings.apps[0].modes, [.unlock, .booked])
     }
 
     func testSettingsSubscriptFallsBackToDefaultAndClamps() {
@@ -19,8 +19,8 @@ final class ModelTests: XCTestCase {
         XCTAssertEqual(settings[.focusSecondsPerToken], 900)
         settings[.focusSecondsPerToken] = 600
         XCTAssertEqual(settings.numbers["focusSecondsPerToken"], 600)
-        settings[.quickLookMaxTokens] = 50
-        XCTAssertEqual(settings[.quickLookMaxTokens], 10)
+        settings[.emergencyPerWeek] = 50
+        XCTAssertEqual(settings[.emergencyPerWeek], 3)
     }
 
     func testPersistedStateRoundTripsAndUsesStringKeyedObjects() throws {
@@ -30,15 +30,15 @@ final class ModelTests: XCTestCase {
         s.daily["2026-09-14"] = DailyStats(backedOff: 1)
         s.grants = [
             AccessGrant(
-                appID: discord, kind: .reply, createdAt: date(2026, 9, 14, 10),
+                appID: discord, kind: .emergency, createdAt: date(2026, 9, 14, 10),
                 expiresAt: date(2026, 9, 14, 10, 3),
-                tokensSpent: 2, note: "reply to Sam")
+                tokensSpent: 0, note: "teammate needs the build link")
         ]
         s.pending = [
             PendingChange(
                 createdAt: date(2026, 9, 14, 10), applyAt: date(2026, 9, 15, 10),
-                change: .setMode(appID: discord, mode: .reply, enabled: true),
-                summary: "Turn on Reply mode for Discord")
+                change: .setMode(appID: discord, mode: .unlock, enabled: true),
+                summary: "Turn on Unlock for Discord")
         ]
         let data = try JSONEncoder.myTime.encode(s)
         XCTAssertEqual(try JSONDecoder.myTime.decode(PersistedState.self, from: data), s)
@@ -63,17 +63,17 @@ final class ModelTests: XCTestCase {
     func testFieldKeys() {
         let id = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
         let app = BlockedApp(id: id, name: "Slack", bundleIDs: ["com.tinyspeck.slackmacgap"], modes: [])
-        XCTAssertEqual(SettingChange.setNumber(key: .replyPerDay, value: 1).fieldKey, "number:replyPerDay")
+        XCTAssertEqual(SettingChange.setNumber(key: .emergencyPerWeek, value: 1).fieldKey, "number:emergencyPerWeek")
         XCTAssertEqual(SettingChange.addApp(app).fieldKey, "app:00000000-0000-0000-0000-000000000001")
         XCTAssertEqual(SettingChange.removeApp(id: id).fieldKey, "app:00000000-0000-0000-0000-000000000001")
         XCTAssertEqual(
-            SettingChange.setMode(appID: id, mode: .reply, enabled: true).fieldKey,
-            "mode:00000000-0000-0000-0000-000000000001:reply")
+            SettingChange.setMode(appID: id, mode: .unlock, enabled: true).fieldKey,
+            "mode:00000000-0000-0000-0000-000000000001:unlock")
         XCTAssertEqual(SettingChange.uninstall.fieldKey, "uninstall")
     }
 
     func testEngineErrorMessages() {
-        XCTAssertEqual(EngineError.invalidAmount(max: 3).userMessage, "Choose between 1 and 3 tokens.")
+        XCTAssertEqual(EngineError.invalidLength.userMessage, "Choose one of the listed lengths.")
         XCTAssertEqual(EngineError.notEnoughTokens.userMessage, "Not enough tokens.")
         XCTAssertEqual(EngineError.bookingTooSoon(leadSeconds: 600).userMessage, "Book at least 10 min ahead.")
         XCTAssertEqual(

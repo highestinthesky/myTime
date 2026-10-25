@@ -6,16 +6,16 @@ It's personal and unsupported, but feel free to use it.
 
 ## How it works
 
-Opening a blocked app quits it and shows a gate with a 5-second pause. Ways past the gate:
+Opening a blocked app quits it and shows a gate with a 5-second pause that grows with the Unlock streak, up to 30 seconds. Ways past the gate:
 
 | Mode | Cost | Access |
 |---|---|---|
-| Quick look | 1 token, up to 3 at once | 30 s per token |
-| Reply mode | 2 tokens and a typed note, 3 per day | 3 min |
+| Unlock | 1 token a minute × streak multiplier | Choose 1, 2, 5, or 10 min; covers every Unlock-enabled app |
 | Booked session | Weekly allowance (5 h), booked at least 10 min ahead | The booked window |
 | Emergency pass | Once a week, typed reason and a 60 s wait | 10 min |
 
 - **Earning:** start a focus timer. 15 minutes of active focus is 1 token. Idle, locked, or sleeping time earns nothing, and some of it can be claimed back from the panel within a daily budget.
+- **Streak:** an Unlock bought less than 15 minutes after the last one ended on the same day costs twice the last multiplier. Waiting 15 minutes or reaching the new day resets it to 1×. Unlocks have no extensions or refunds.
 - **Reset:** tokens and partial progress reset every day at 4:00 AM.
 - **Settings:** tightening applies at once. Loosening (including uninstall) waits 24 hours and can be cancelled while pending.
 - **Quitting:** myTime restarts itself if killed. **Quit myTime…** needs a written reason and a 60 s wait, and it stays off until you open it from Applications.
@@ -37,7 +37,7 @@ scripts/uninstall.sh      # developer escape hatch; the in-app uninstall is dela
 
 ```bash
 swift build
-swift test                # 163 tests
+swift test                # 173 tests
 swift format --in-place --recursive Sources Tests
 ```
 
@@ -47,8 +47,8 @@ swift format --in-place --recursive Sources Tests
 
 ## Docs
 
-- [Design spec](docs/superpowers/specs/2026-09-13-mytime-design.md): the source of truth, currently revision 7.
+- [Design spec](docs/superpowers/specs/2026-09-13-mytime-design.md): the source of truth, currently revision 8.
 - [AGENTS.md](AGENTS.md): conventions and the workflow for changing the app.
 - [IMPLEMENTATION_NOTES.md](IMPLEMENTATION_NOTES.md): deviations, review findings, and verification per run.
 - [docs/MANUAL_TESTS.md](docs/MANUAL_TESTS.md): manual checks to run against an installed build.
-- [docs/superpowers/plans/](docs/superpowers/plans/): the four historical run plans.
+- [docs/superpowers/plans/](docs/superpowers/plans/): Runs 1–4 historical plans and the current Run 5 Unlock plan.
